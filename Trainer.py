@@ -8,6 +8,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 import pandas as pd
 
+pl.seed_everything(42)
+
 # ------------------ Demo DataFrame ------------------
 df = pd.read_csv("synthetic_text_completion.csv")
 
@@ -129,6 +131,7 @@ model = Seq2SeqModel(
     num_decoder_layers=2,
     num_heads=4,
     d_ff=128,
+    tokenizer=tokenizer,
     dropout=0.1,
     pad_token_id=pad_id,
     lr=1e-3

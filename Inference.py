@@ -58,7 +58,9 @@ if __name__ == "__main__":
     tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
 
-    model = Seq2SeqModel.load_from_checkpoint("checkpoints/BestModel.ckpt", vocab_size=vocab_size)
+    model = Seq2SeqModel.load_from_checkpoint("checkpoints/BestModel-v1.ckpt",
+                                                vocab_size=vocab_size,
+                                                tokenizer=tokenizer)
 
     #src_text = "Artificial intelligence is transforming"
     src_text = "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies"

@@ -3,3 +3,7 @@ pytorch-lightning
 transformers
 pandas
 numpy
+sacrebleu
+rouge_score
+bert_score
+nltk

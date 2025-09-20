@@ -9,13 +9,10 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 import pandas as pd
 
 # ------------------ Demo DataFrame ------------------
-df = pd.read_csv("synthetic_text_completion_dataset.csv")
+df = pd.read_csv("synthetic_text_completion.csv")
 
 print("\nDataFrame shape:", df.shape)
 
-
-import torch
-from torch.utils.data import Dataset
 
 class Seq2SeqDataset(Dataset):
     """
@@ -152,7 +149,7 @@ checkpoint_callback = ModelCheckpoint(
 
 # ---------------- Trainer ----------------
 trainer = pl.Trainer(
-    max_epochs=10,
+    max_epochs=100,
     check_val_every_n_epoch=1,
     devices=-1,
     accelerator="gpu",  # change to 'gpu' if available

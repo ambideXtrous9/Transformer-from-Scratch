@@ -58,11 +58,11 @@ if __name__ == "__main__":
     tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
 
-    model = Seq2SeqModel.load_from_checkpoint("checkpoints/BestModel-v2.ckpt", vocab_size=vocab_size)
+    model = Seq2SeqModel.load_from_checkpoint("checkpoints/BestModel.ckpt", vocab_size=vocab_size)
 
-    #src_text = "Artificial intelligence is transforming"
-    #src_text = "Convolutional networks are widely"
-    src_text = "5G technology enables"
+    # src_text = "Artificial intelligence is transforming"
+    src_text = "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies"
+    # src_text = "Climate change poses significant challenges such as Researchers have pointed out that this shift is inevitable"
     output = greedy_decode(model, tokenizer, src_text, max_len=10)
     print("Input :", src_text)
     print("Output:", output)

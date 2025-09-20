@@ -60,9 +60,9 @@ if __name__ == "__main__":
 
     model = Seq2SeqModel.load_from_checkpoint("checkpoints/BestModel.ckpt", vocab_size=vocab_size)
 
-    # src_text = "Artificial intelligence is transforming"
+    #src_text = "Artificial intelligence is transforming"
     src_text = "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies"
-    # src_text = "Climate change poses significant challenges such as Researchers have pointed out that this shift is inevitable"
-    output = greedy_decode(model, tokenizer, src_text, max_len=10)
+    #src_text = "Climate change poses significant challenges such as Researchers have pointed out that this shift is inevitable"
+    output = greedy_decode(model, tokenizer, src_text, max_len=20)
     print("Input :", src_text)
     print("Output:", output)

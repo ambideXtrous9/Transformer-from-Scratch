@@ -5,7 +5,6 @@ from typing import Optional
 
 from Encoder import Encoder
 from Decoder import Decoder
-from Embedding import get_tokenizer
 
 class Seq2SeqModel(pl.LightningModule):
     def __init__(

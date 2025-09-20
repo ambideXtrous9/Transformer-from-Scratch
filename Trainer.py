@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
-from Embedding import get_tokenizer, tokenize_batch
+from Embedding import get_tokenizer
 from Seq2SeqModel import Seq2SeqModel  # the training module we just created
 from torch.utils.data import random_split
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -16,7 +16,7 @@ print("\nDataFrame shape:", df.shape)
 
 class Seq2SeqDataset(Dataset):
     """
-    Dataset for encoder-decoder training (like MarianMT / T5 / BART).
+    Dataset for encoder-decoder training.
     - Encoder input: tokenized src text
     - Decoder input: [BOS] + target
     - Labels: target + [EOS] with -100 for padding

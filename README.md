@@ -4,7 +4,7 @@
 
 [![PyTorch](https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white)](https://pytorch.org/)
 [![Lightning](https://img.shields.io/badge/Lightning-792EE5?style=for-the-badge&logo=pytorchlightning&logoColor=white)](https://pytorch-lightning.readthedocs.io/)
-[![Python](https://img.shields.io/badge/Python-3.8+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 **A complete, production-ready implementation of the Transformer architecture from "Attention Is All You Need"**
@@ -79,7 +79,7 @@ python Trainer.py
 **Training Features:**
 - 🎯 **Automatic checkpointing** - Best model saved automatically
 - 📊 **Real-time monitoring** - Loss tracking and validation metrics
-- 🔄 **GPU acceleration** - Multi-GPU support out of the box
+- 🔄 **GPU acceleration** - GPU support
 - 📈 **Progress tracking** - Detailed logging and progress bars
 
 ### 3. Inference
@@ -169,7 +169,6 @@ transformer-from-scratch/
 - 📚 **Learning** - Understanding Transformer architecture
 - 🔬 **Research** - Experimenting with attention mechanisms
 - 🚀 **Prototyping** - Quick seq2seq model development
-- 🎓 **Education** - Teaching deep learning concepts
 
 ### Applications:
 - 📝 **Text Completion** - Auto-complete sentences
@@ -180,19 +179,7 @@ transformer-from-scratch/
 ---
 
 
-## 📈 Performance
 
-### Model Size
-- **Parameters**: ~2M (configurable)
-- **Memory**: ~500MB GPU memory (batch_size=4)
-- **Speed**: ~100 tokens/second on modern GPU
-
-### Training Time
-- **Small model** (2 layers): ~10 minutes
-- **Medium model** (4 layers): ~30 minutes
-- **Large model** (6 layers): ~1 hour
-
----
 
 ## 🤝 Contributing
 
@@ -222,8 +209,8 @@ We welcome contributions! Here's how you can help:
 ### Resources
 - 📖 [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/)
 - ⚡ [PyTorch Lightning Documentation](https://pytorch-lightning.readthedocs.io/)
-- 🔥 [PyTorch Documentation](https://pytorch.org/docs/stable/index.html)
 - 🎓 [Attention Mechanism Explained](https://distill.pub/2016/augmented-rnns/)
+- 🔥 [Transformer from Scratch](https://www.youtube.com/watch?v=ISNdQcPhsts)
 
 ---
 

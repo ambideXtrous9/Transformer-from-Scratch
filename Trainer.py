@@ -11,9 +11,9 @@ import pandas as pd
 pl.seed_everything(42)
 
 # ------------------ Demo DataFrame ------------------
-df = pd.read_csv("synthetic_text_completion.csv")
+df = pd.read_csv("versatile_dataset_2000.csv")
 
-print("\nDataFrame shape:", df.shape)
+print(f"\n---------DataFrame shape: {df.shape}---------\n")
 
 
 class Seq2SeqDataset(Dataset):

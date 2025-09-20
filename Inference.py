@@ -1,3 +1,5 @@
+import os
+import glob
 import torch
 from typing import Optional
 from Seq2SeqModel import Seq2SeqModel
@@ -54,17 +56,36 @@ def greedy_decode(
     return decoded
 
 
+def load_latest_checkpoint(checkpoint_dir, vocab_size, tokenizer):
+    # Find all ckpt files in directory
+    ckpt_list = glob.glob(os.path.join(checkpoint_dir, "*.ckpt"))
+    if not ckpt_list:
+        raise FileNotFoundError(f"No checkpoint found in {checkpoint_dir}")
+    
+    # Get latest by modification time
+    latest_ckpt = max(ckpt_list, key=os.path.getmtime)
+    print(f"Loading latest checkpoint: {latest_ckpt}")
+    
+    model = Seq2SeqModel.load_from_checkpoint(
+        latest_ckpt,
+        vocab_size=vocab_size,
+        tokenizer=tokenizer
+    )
+    return model
+
+
 if __name__ == "__main__":
     tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
 
-    model = Seq2SeqModel.load_from_checkpoint("checkpoints/BestModel-v1.ckpt",
-                                                vocab_size=vocab_size,
-                                                tokenizer=tokenizer)
+    model = load_latest_checkpoint("checkpoints", vocab_size, tokenizer)
 
-    #src_text = "Artificial intelligence is transforming"
-    src_text = "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies"
-    #src_text = "Climate change poses significant challenges such as Researchers have pointed out that this shift is inevitable"
-    output = greedy_decode(model, tokenizer, src_text, max_len=20)
+    # src_text = "Artificial intelligence is transforming"
+    # src_text = "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies"
+    # src_text = "Climate change poses significant challenges such as Researchers have pointed out that this shift is inevitable"
+    src_text = "Artificial Intelligence industries"
+    output = greedy_decode(model, tokenizer, src_text, max_len=40)
+    print("\n----------------------------------------------\n")
     print("Input :", src_text)
     print("Output:", output)
+    print("\n----------------------------------------------\n")

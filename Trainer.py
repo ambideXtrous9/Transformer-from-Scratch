@@ -4,31 +4,14 @@ import pytorch_lightning as pl
 from Embedding import get_tokenizer, tokenize_batch
 from Seq2SeqModel import Seq2SeqModel  # the training module we just created
 from torch.utils.data import random_split
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 import pandas as pd
 
 # ------------------ Demo DataFrame ------------------
-data = {
-    "text": [
-        "Hello, how are you doing today?",
-        "The quick brown fox jumps over the lazy dog.",
-        "I love machine learning and deep learning.",
-        "PyTorch Lightning simplifies training loops.",
-        "Transformers are very powerful models for NLP tasks."
-    ],
-    "completion": [
-        "how are you doing today?",
-        "brown fox jumps over the lazy dog.",
-        "machine learning and deep learning.",
-        "Lightning simplifies training loops.",
-        "powerful models for NLP tasks."
-    ]
-}
+df = pd.read_csv("synthetic_text_completion_dataset.csv")
 
-df = pd.DataFrame(data)
-
-print("DataFrame shape:", df.shape)
-print("DataFrame head:\n", df.head(2))
+print("\nDataFrame shape:", df.shape)
 
 
 class Seq2SeqDataset(Dataset):
@@ -96,11 +79,26 @@ model = Seq2SeqModel(
     lr=1e-3
 )
 
+
+
+checkpoint_callback = ModelCheckpoint(
+    dirpath = 'checkpoints',
+    filename = 'BestModel',
+    save_top_k = 1,
+    verbose = True,
+    monitor = 'val_loss_epoch',
+    mode = 'min'
+)
+
+
+
 # ---------------- Trainer ----------------
 trainer = pl.Trainer(
     max_epochs=5,
-    log_every_n_steps=1,
+    check_val_every_n_epoch=1,
+    devices=-1,
     accelerator="gpu",  # change to 'gpu' if available
+    callbacks=[checkpoint_callback]
 )
 
 # ---------------- Run Training ----------------

@@ -92,6 +92,7 @@ class Seq2SeqModel(pl.LightningModule):
     def on_train_epoch_end(self):
         avg_loss = torch.stack(self.train_epoch_losses).mean()
         self.log("train_loss_epoch", avg_loss, prog_bar=True)
+        print(f"\n------Training loss epoch: {avg_loss.item()}------\n")
         self.train_epoch_losses = []  # reset for next epoch
 
     def validation_step(self, batch, batch_idx):
@@ -103,12 +104,12 @@ class Seq2SeqModel(pl.LightningModule):
 
         self.val_epoch_losses.append(loss.detach())
         self.log("val_loss_step", loss, on_step=False, on_epoch=True, prog_bar=True)
-        print(f"\n------Validation loss step: {loss.item()}------\n")
         return loss
 
     def on_validation_epoch_end(self):
         avg_loss = torch.stack(self.val_epoch_losses).mean()
         self.log("val_loss_epoch", avg_loss, prog_bar=True)
+        print(f"\n------Validation loss epoch: {avg_loss.item()}------\n")
         self.val_epoch_losses = []  # reset for next epoch
 
     def configure_optimizers(self):

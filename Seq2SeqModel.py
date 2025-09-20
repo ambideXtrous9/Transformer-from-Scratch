@@ -7,7 +7,6 @@ from Encoder import Encoder
 from Decoder import Decoder
 from Embedding import get_tokenizer
 
-
 class Seq2SeqModel(pl.LightningModule):
     def __init__(
         self,
@@ -54,10 +53,10 @@ class Seq2SeqModel(pl.LightningModule):
         # Final classifier head
         self.classifier = nn.Linear(d_model, vocab_size)
 
-        # Loss
-        self.loss_fn = nn.CrossEntropyLoss(ignore_index=pad_token_id)
+        # Loss — ignore labels with -100 (set in dataset)
+        self.loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
 
-        # Epoch loss tracking
+        # Track epoch losses
         self.train_epoch_losses = []
         self.val_epoch_losses = []
 
@@ -68,22 +67,29 @@ class Seq2SeqModel(pl.LightningModule):
         src_mask: Optional[torch.Tensor] = None,
         tgt_mask: Optional[torch.Tensor] = None,
     ):
+        # Encode
         enc_out, _ = self.encoder(src_ids, src_mask)
+
+        # Decode
         dec_out, _, _ = self.decoder(
             tgt_ids,
             enc_out,
             tgt_mask=tgt_mask,
             memory_mask=src_mask
         )
+
+        # Project to vocab
         logits = self.classifier(dec_out)
         return logits
 
     def training_step(self, batch, batch_idx):
-        src_ids, tgt_ids = batch["src_ids"], batch["tgt_ids"]
-        src_mask, tgt_mask = batch.get("src_mask"), batch.get("tgt_mask")
+        src_ids, src_mask = batch["src_ids"], batch["src_mask"]
+        tgt_ids, tgt_mask, labels = batch["tgt_ids"], batch["tgt_mask"], batch["labels"]
 
-        logits = self.forward(src_ids, tgt_ids[:, :-1], src_mask, tgt_mask[:, :-1] if tgt_mask is not None else None)
-        loss = self.loss_fn(logits.reshape(-1, logits.size(-1)), tgt_ids[:, 1:].reshape(-1))
+        logits = self.forward(src_ids, tgt_ids, src_mask, tgt_mask)
+
+        # Compute loss against labels (already shifted, padded, masked in dataset)
+        loss = self.loss_fn(logits.reshape(-1, logits.size(-1)), labels.reshape(-1))
 
         self.train_epoch_losses.append(loss.detach())
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
@@ -92,15 +98,15 @@ class Seq2SeqModel(pl.LightningModule):
     def on_train_epoch_end(self):
         avg_loss = torch.stack(self.train_epoch_losses).mean()
         self.log("train_loss_epoch", avg_loss, prog_bar=True)
-        print(f"\n------Training loss epoch: {avg_loss.item()}------\n")
-        self.train_epoch_losses = []  # reset for next epoch
+        print(f"\n------ Training loss epoch: {avg_loss.item():.4f} ------\n")
+        self.train_epoch_losses = []
 
     def validation_step(self, batch, batch_idx):
-        src_ids, tgt_ids = batch["src_ids"], batch["tgt_ids"]
-        src_mask, tgt_mask = batch.get("src_mask"), batch.get("tgt_mask")
+        src_ids, src_mask = batch["src_ids"], batch["src_mask"]
+        tgt_ids, tgt_mask, labels = batch["tgt_ids"], batch["tgt_mask"], batch["labels"]
 
-        logits = self.forward(src_ids, tgt_ids[:, :-1], src_mask, tgt_mask[:, :-1] if tgt_mask is not None else None)
-        loss = self.loss_fn(logits.reshape(-1, logits.size(-1)), tgt_ids[:, 1:].reshape(-1))
+        logits = self.forward(src_ids, tgt_ids, src_mask, tgt_mask)
+        loss = self.loss_fn(logits.reshape(-1, logits.size(-1)), labels.reshape(-1))
 
         self.val_epoch_losses.append(loss.detach())
         self.log("val_loss_step", loss, on_step=False, on_epoch=True, prog_bar=True)
@@ -109,8 +115,8 @@ class Seq2SeqModel(pl.LightningModule):
     def on_validation_epoch_end(self):
         avg_loss = torch.stack(self.val_epoch_losses).mean()
         self.log("val_loss_epoch", avg_loss, prog_bar=True)
-        print(f"\n------Validation loss epoch: {avg_loss.item()}------\n")
-        self.val_epoch_losses = []  # reset for next epoch
+        print(f"\n------ Validation loss epoch: {avg_loss.item():.4f} ------\n")
+        self.val_epoch_losses = []
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)

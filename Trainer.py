@@ -14,40 +14,98 @@ df = pd.read_csv("synthetic_text_completion_dataset.csv")
 print("\nDataFrame shape:", df.shape)
 
 
+import torch
+from torch.utils.data import Dataset
+
 class Seq2SeqDataset(Dataset):
     """
-    Dataset for sequence-to-sequence task using a DataFrame with 'text' and 'completion' columns.
+    Dataset for encoder-decoder training (like MarianMT / T5 / BART).
+    - Encoder input: tokenized src text
+    - Decoder input: [BOS] + target
+    - Labels: target + [EOS] with -100 for padding
     """
-    def __init__(self, tokenizer, df, max_length=32):
-        """
-        df: pandas DataFrame with columns 'text' (source) and 'completion' (target)
-        tokenizer: a HuggingFace tokenizer
-        max_length: max length for both source and target sequences
-        """
+    def __init__(self, tokenizer, df, max_length=128):
         self.tokenizer = tokenizer
         self.src_texts = df["text"].tolist()
         self.tgt_texts = df["completion"].tolist()
         self.max_length = max_length
 
-        # tokenize source and target separately
-        self.src_batch = tokenize_batch(tokenizer, self.src_texts, max_length=max_length)
-        self.tgt_batch = tokenize_batch(tokenizer, self.tgt_texts, max_length=max_length)
+        # Ensure special tokens exist
+        if tokenizer.bos_token is None:
+            tokenizer.add_special_tokens({"bos_token": "<s>"})
+        if tokenizer.eos_token is None:
+            tokenizer.add_special_tokens({"eos_token": "</s>"})
+        if tokenizer.pad_token is None:
+            tokenizer.add_special_tokens({"pad_token": "<pad>"})
 
-        self.src_ids = self.src_batch["input_ids"]
-        self.src_mask = self.src_batch["attention_mask"]
-        self.tgt_ids = self.tgt_batch["input_ids"]
-        self.tgt_mask = self.tgt_batch["attention_mask"]
+        self.pad_id = tokenizer.pad_token_id
+        self.bos_id = tokenizer.bos_token_id
+        self.eos_id = tokenizer.eos_token_id
 
     def __len__(self):
         return len(self.src_texts)
 
     def __getitem__(self, idx):
+        src, tgt = self.src_texts[idx], self.tgt_texts[idx]
+
+        # ---------------- Encoder ----------------
+        src_enc = self.tokenizer(
+            src,
+            truncation=True,
+            max_length=self.max_length,
+            padding="max_length",
+            return_tensors="pt"
+        )
+        src_ids = src_enc["input_ids"].squeeze(0)
+        src_mask = src_enc["attention_mask"].squeeze(0)
+
+        # ---------------- Decoder ----------------
+        tgt_enc = self.tokenizer(
+            tgt,
+            add_special_tokens=False,
+            truncation=True,
+            max_length=self.max_length - 2,  # reserve BOS+EOS
+            return_tensors="pt"
+        )
+        tgt_ids_raw = tgt_enc["input_ids"].squeeze(0)
+
+        # Decoder input: [BOS] + target
+        tgt_ids = torch.cat(
+            [torch.tensor([self.bos_id]), tgt_ids_raw], dim=0
+        )
+
+        # Labels: target + [EOS]
+        labels = torch.cat(
+            [tgt_ids_raw, torch.tensor([self.eos_id])], dim=0
+        )
+
+        # ---------------- Padding ----------------
+        # pad decoder input with pad_id
+        if len(tgt_ids) < self.max_length:
+            pad_len = self.max_length - len(tgt_ids)
+            tgt_ids = torch.cat([tgt_ids, torch.full((pad_len,), self.pad_id)])
+        else:
+            tgt_ids = tgt_ids[:self.max_length]
+
+        # pad labels with -100 (ignored by loss)
+        if len(labels) < self.max_length:
+            pad_len = self.max_length - len(labels)
+            labels = torch.cat([labels, torch.full((pad_len,), -100)])
+        else:
+            labels = labels[:self.max_length]
+
+        # tgt_mask (for attention)
+        tgt_mask = (tgt_ids != self.pad_id).long()
+
         return {
-            "src_ids": self.src_ids[idx],
-            "tgt_ids": self.tgt_ids[idx],
-            "src_mask": self.src_mask[idx],
-            "tgt_mask": self.tgt_mask[idx]
+            "src_ids": src_ids.long(),
+            "src_mask": src_mask.long(),
+            "tgt_ids": tgt_ids.long(),
+            "tgt_mask": tgt_mask.long(),
+            "labels": labels.long()
         }
+
+
 
 # ---------------- Setup ----------------
 tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
@@ -62,7 +120,7 @@ train_size = int(0.8 * len(dataset))
 val_size = len(dataset) - train_size
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
-train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=2)
 
 # ---------------- Lightning Model ----------------
@@ -94,7 +152,7 @@ checkpoint_callback = ModelCheckpoint(
 
 # ---------------- Trainer ----------------
 trainer = pl.Trainer(
-    max_epochs=5,
+    max_epochs=10,
     check_val_every_n_epoch=1,
     devices=-1,
     accelerator="gpu",  # change to 'gpu' if available

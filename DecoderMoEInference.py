@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
     model = load_latest_checkpoint("DecoderMoECheckpoints", vocab_size, tokenizer)
 
-    src_text = "Artificial intelligence is transforming"
+    src_text = "Artificial intelligence is"
     #src_text = "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies"
     # src_text = "Climate change poses significant challenges such as Researchers have pointed out that this shift is inevitable"
     output = greedy_decode(model, tokenizer, src_text, max_len=100)

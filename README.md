@@ -24,6 +24,9 @@
 🧪 **Independent Testing** - Run each module separately for debugging and learning  
 📚 **Educational** - Clean, well-documented code perfect for learning  
 🎨 **Modern Stack** - Uses GPT-2 tokenizer and state-of-the-art practices  
+🚀 **Multiple Architectures** - CrossAttention, DecoderOnly, and MoE implementations  
+📊 **Comprehensive Metrics** - BLEU, ROUGE, METEOR, and BERTScore evaluation  
+🎛️ **Advanced Features** - Mixture of Experts with Top-K routing and sparse computation  
 
 ---
 
@@ -40,6 +43,16 @@
 | **➕ AddNorm** | Residual connections + normalization | Layer normalization, dropout, gradient flow |
 | **📥 Encoder** | Processes input sequences | Stacked layers, self-attention, context building |
 | **📤 Decoder** | Generates output sequences | Masked attention, cross-attention, autoregressive |
+| **🎛️ MoE Components** | Mixture of Experts implementation | Top-K routing, sparse computation, expert specialization |
+| **🔀 TopKRouter** | Expert selection mechanism | Dynamic routing, load balancing, efficient computation |
+
+### Model Architectures
+
+| Architecture | Description | Use Cases | Key Features |
+|--------------|-------------|-----------|--------------|
+| **🔄 CrossAttentionSeq2Seq** | Full encoder-decoder with cross-attention | Translation, summarization | Bidirectional encoding, cross-attention |
+| **📝 DecoderOnly** | GPT-style autoregressive model | Text generation, completion | Causal masking, next-token prediction |
+| **🎛️ DecoderOnlyMoE** | Decoder-only with Mixture of Experts | Large-scale text generation | Sparse activation, expert routing |
 
 ### Data Flow
 
@@ -67,14 +80,29 @@ git clone https://github.com/yourusername/transformer-from-scratch.git
 cd transformer-from-scratch
 
 # Install dependencies
-pip install torch pytorch-lightning transformers pandas
+pip install torch pytorch-lightning transformers pandas numpy sacrebleu rouge_score bert_score nltk
 ```
 
 ### 2. Training
 
+Choose from multiple model architectures:
+
+#### CrossAttention Seq2Seq Model
 ```bash
-# Train on the synthetic dataset
+# Train encoder-decoder with cross-attention
 python Trainer.py
+```
+
+#### Decoder-Only Model (GPT-style)
+```bash
+# Train decoder-only autoregressive model
+python DecoderOnlyTrainer.py
+```
+
+#### Decoder-Only with Mixture of Experts
+```bash
+# Train MoE model with expert routing
+python DecoderMoETrainer.py
 ```
 
 **Training Features:**
@@ -82,12 +110,29 @@ python Trainer.py
 - 📊 **Real-time monitoring** - Loss tracking and validation metrics
 - 🔄 **GPU acceleration** - GPU support
 - 📈 **Progress tracking** - Detailed logging and progress bars
+- 🎛️ **MoE Support** - Sparse computation with expert routing
+- 📊 **Comprehensive Metrics** - BLEU, ROUGE, METEOR, BERTScore evaluation
 
 ### 3. Inference
 
+Choose the appropriate inference script for your model:
+
+#### CrossAttention Seq2Seq Model
 ```bash
-# Generate text completions
+# Generate text completions with encoder-decoder
 python Inference.py
+```
+
+#### Decoder-Only Model
+```bash
+# Generate text with decoder-only model
+python DecoderOnlyInference.py
+```
+
+#### Decoder-Only with MoE
+```bash
+# Generate text with MoE model
+python DecoderMoEInference.py
 ```
 
 **Inference Features:**
@@ -95,6 +140,8 @@ python Inference.py
 - ⚡ **Fast inference** - Optimized for production use
 - 🎯 **Flexible input** - Handle variable length sequences
 - 🔧 **Easy integration** - Simple API for your applications
+- 🎛️ **MoE Support** - Efficient expert routing during inference
+- 📊 **Multiple Models** - Support for different architectures
 
 ### 4. Independent Module Testing
 
@@ -119,19 +166,55 @@ python Seq2SeqModel.py           # Test complete model
 
 ---
 
+## 📊 Evaluation Metrics
+
+The codebase includes comprehensive evaluation metrics for assessing model performance:
+
+### Automatic Metrics
+
+| Metric | Description | Range | Use Case |
+|--------|-------------|-------|----------|
+| **🎯 BLEU** | N-gram overlap with reference | 0-100 | Translation quality, text similarity |
+| **📝 ROUGE-1** | Unigram overlap | 0-1 | Content coverage, summarization |
+| **📝 ROUGE-2** | Bigram overlap | 0-1 | Phrase-level similarity |
+| **📝 ROUGE-L** | Longest common subsequence | 0-1 | Structural similarity |
+| **☄️ METEOR** | Semantic similarity with synonyms | 0-1 | Meaning preservation |
+| **🧠 BERTScore** | Contextual embedding similarity | 0-1 | Semantic understanding |
+
+### Implementation Features
+
+- **📊 Real-time Tracking** - Metrics computed during validation
+- **📈 Progress Monitoring** - All metrics logged to PyTorch Lightning
+- **🔄 Automatic Evaluation** - No manual intervention required
+- **⚡ Efficient Computation** - Optimized for large-scale evaluation
+- **📋 Comprehensive Coverage** - Multiple evaluation perspectives
+
+### Usage
+
+All metrics are automatically computed during training validation steps and logged to the progress bar and tensorboard logs.
+
+---
+
 ## 📊 Dataset & Task
 
-**Synthetic Text Completion Dataset**
-- 📝 **1,000 examples** of text completion pairs
+**Versatile Text Completion Dataset**
+- 📝 **2,000 examples** of diverse text completion pairs
 - 🎯 **Task**: Complete partial sentences with meaningful continuations
 - 📏 **Format**: `"partial sentence..." → "completion text"`
 - 🔄 **Train/Val Split**: 80/20 automatic split
+- 🌍 **Diverse Topics**: Covers multiple domains and contexts
 
 **Example:**
 ```
 Input:  "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies"
 Output: "reducing dependence on fossil fuels and lowering emissions."
 ```
+
+**Dataset Features:**
+- 📚 **Educational Content** - Science, technology, and general knowledge
+- 🔄 **Multiple Formats** - Various sentence structures and completion types
+- 🎯 **Quality Controlled** - Curated for meaningful learning objectives
+- 📊 **Balanced Distribution** - Even representation across different topics
 
 ---
 
@@ -148,6 +231,15 @@ Output: "reducing dependence on fossil fuels and lowering emissions."
 | `d_ff` | 128-1024 | Feed-forward dimension |
 | `dropout` | 0.1 | Dropout rate |
 | `max_positions` | 32-512 | Maximum sequence length |
+| `use_sinusoidal_pos` | True | Use sinusoidal positional encoding |
+
+### MoE Configuration (DecoderOnlyMoE)
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `num_experts` | 4 | Number of expert networks |
+| `top_k` | 2 | Number of experts to activate per token |
+| `expert_capacity` | Auto | Maximum tokens per expert |
 
 ### Training Configuration
 
@@ -170,17 +262,29 @@ transformer-from-scratch/
 │   ├── MultiHeadSelfAttention.py # Multi-head attention mechanism
 │   ├── FFN.py                    # Position-wise feed-forward
 │   └── AddNorm.py                # Residual connections + normalization
-├── 🏗️ Architecture
+├── 🏗️ Architecture Models
 │   ├── Encoder.py                # Encoder stack implementation
 │   ├── Decoder.py                # Decoder stack implementation
-│   └── Seq2SeqModel.py           # Complete model with Lightning
-├── 🚀 Training & Inference
-│   ├── Trainer.py                # Training pipeline
-│   └── Inference.py              # Inference utilities
+│   ├── CrossAttentionSeq2SeqModel.py  # Full encoder-decoder model
+│   ├── DecoderOnlySeq2SeqModel.py     # GPT-style decoder-only model
+│   └── DecoderMoE.py             # Decoder-only with Mixture of Experts
+├── 🚀 Training Scripts
+│   ├── Trainer.py                # CrossAttention training pipeline
+│   ├── DecoderOnlyTrainer.py     # Decoder-only training pipeline
+│   └── DecoderMoETrainer.py      # MoE training pipeline
+├── 🎯 Inference Scripts
+│   ├── Inference.py              # CrossAttention inference
+│   ├── DecoderOnlyInference.py   # Decoder-only inference
+│   └── DecoderMoEInference.py    # MoE inference
 ├── 📊 Data
-│   └── synthetic_text_completion.csv  # Training dataset
-└── 📁 Checkpoints
-    └── BestModel.ckpt            # Saved model weights
+│   ├── versatile_dataset_2000.csv     # Main training dataset
+│   └── synthetic_text_completion.csv  # Legacy dataset
+├── 📁 Checkpoints
+│   ├── Seq2SeqCheckpoints/       # CrossAttention model checkpoints
+│   ├── DecoderOnlyCheckpoints/   # Decoder-only model checkpoints
+│   └── DecoderMoECheckpoints/    # MoE model checkpoints
+└── 📈 Logs
+    └── lightning_logs/           # Training logs and metrics
 ```
 
 ---
@@ -194,13 +298,69 @@ transformer-from-scratch/
 - 🧪 **Component Testing** - Debug and validate individual modules
 
 ### Applications:
-- 📝 **Text Completion** - Auto-complete sentences
+
+#### CrossAttention Seq2Seq Model
 - 📄 **Summarization** - Generate concise summaries
 - 🔄 **Translation** - Sequence-to-sequence translation
+- 📝 **Question Answering** - Context-aware responses
+- 📊 **Data-to-Text** - Convert structured data to natural language
+
+#### Decoder-Only Models
+- 📝 **Text Completion** - Auto-complete sentences
 - 💬 **Chatbots** - Conversational AI systems
+- 🎨 **Creative Writing** - Story and content generation
+- 🔍 **Code Generation** - Programming assistance
+
+#### MoE Models
+- 🚀 **Large-Scale Generation** - Efficient text generation at scale
+- 🎯 **Specialized Tasks** - Expert routing for domain-specific content
+- ⚡ **Resource Optimization** - Sparse computation for better efficiency
+- 🧠 **Multi-Domain Learning** - Handle diverse topics with specialized experts
 
 ---
 
+## 🎛️ Mixture of Experts (MoE) Implementation
+
+### Key Features
+
+The MoE implementation includes several advanced features for efficient sparse computation:
+
+#### Expert Architecture
+- **🔧 ExpertMLP** - Individual expert networks with GELU activation
+- **🎯 TopKRouter** - Intelligent routing mechanism for expert selection
+- **⚡ Sparse Computation** - Only activate selected experts per token
+- **📊 Load Balancing** - Automatic expert capacity management
+
+#### Routing Strategy
+- **🎲 Softmax Gating** - Probabilistic expert selection
+- **🔝 Top-K Selection** - Activate only the most relevant experts
+- **📈 Dynamic Routing** - Adaptive expert selection based on input
+- **⚖️ Load Balancing** - Prevent expert overloading
+
+#### Performance Optimizations
+- **🚀 Sparse Activation** - Reduce computational overhead
+- **💾 Memory Efficient** - Only store active expert outputs
+- **🔄 Batch Processing** - Efficient parallel expert computation
+- **📊 Gradient Flow** - Proper backpropagation through routing
+
+### Usage Example
+
+```python
+# Initialize MoE model
+model = DecoderOnlyMoEModel(
+    vocab_size=vocab_size,
+    d_model=256,
+    num_experts=4,      # Number of expert networks
+    top_k=2,           # Activate top 2 experts per token
+    num_layers=6,
+    tokenizer=tokenizer
+)
+
+# Training automatically handles expert routing
+trainer.fit(model, train_loader, val_loader)
+```
+
+---
 
 ## 🤝 Contributing
 

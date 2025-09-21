@@ -21,6 +21,7 @@
 ⚡ **Lightning Fast** - PyTorch Lightning integration for distributed training  
 🧠 **Production Ready** - Proper error handling, logging, and checkpointing  
 🔧 **Modular Design** - Each component is independently testable and reusable  
+🧪 **Independent Testing** - Run each module separately for debugging and learning  
 📚 **Educational** - Clean, well-documented code perfect for learning  
 🎨 **Modern Stack** - Uses GPT-2 tokenizer and state-of-the-art practices  
 
@@ -94,6 +95,27 @@ python Inference.py
 - ⚡ **Fast inference** - Optimized for production use
 - 🎯 **Flexible input** - Handle variable length sequences
 - 🔧 **Easy integration** - Simple API for your applications
+
+### 4. Independent Module Testing
+
+Each component can be run independently for testing and experimentation:
+
+```bash
+# Test individual components
+python Embedding.py              # Test token & positional embeddings
+python MultiHeadSelfAttention.py # Test attention mechanism
+python FFN.py                    # Test feed-forward network
+python AddNorm.py                # Test residual connections & normalization
+python Encoder.py                # Test encoder stack
+python Decoder.py                # Test decoder stack
+python Seq2SeqModel.py           # Test complete model
+```
+
+**Independent Testing Features:**
+- 🧪 **Component isolation** - Test each part separately
+- 🔍 **Debugging friendly** - Easy to identify issues in specific components
+- 📚 **Learning focused** - Understand each component's behavior individually
+- ⚡ **Quick validation** - Fast testing without full training pipeline
 
 ---
 
@@ -169,6 +191,7 @@ transformer-from-scratch/
 - 📚 **Learning** - Understanding Transformer architecture
 - 🔬 **Research** - Experimenting with attention mechanisms
 - 🚀 **Prototyping** - Quick seq2seq model development
+- 🧪 **Component Testing** - Debug and validate individual modules
 
 ### Applications:
 - 📝 **Text Completion** - Auto-complete sentences
@@ -177,8 +200,6 @@ transformer-from-scratch/
 - 💬 **Chatbots** - Conversational AI systems
 
 ---
-
-
 
 
 ## 🤝 Contributing
@@ -211,12 +232,6 @@ We welcome contributions! Here's how you can help:
 - ⚡ [PyTorch Lightning Documentation](https://pytorch-lightning.readthedocs.io/)
 - 🎓 [Attention Mechanism Explained](https://distill.pub/2016/augmented-rnns/)
 - 🔥 [Transformer from Scratch](https://www.youtube.com/watch?v=ISNdQcPhsts)
-
----
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 

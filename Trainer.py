@@ -140,8 +140,8 @@ model = CrossAttentionSeq2SeqModel(
 
 
 checkpoint_callback = ModelCheckpoint(
-    dirpath = 'Seq2SeqCheckpoints',
-    filename = 'Seq2SeqBestModel',
+    dirpath = 'CrossAttentionSeq2SeqCheckpoints',
+    filename = 'CrossAttentionSeq2SeqBestModel',
     save_top_k = 1,
     verbose = True,
     monitor = 'val_loss_epoch',

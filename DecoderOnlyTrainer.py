@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
 from Embedding import get_tokenizer
-from CrossAttentionSeq2SeqModel import CrossAttentionSeq2SeqModel  # the training module we just created
+from DecoderOnlySeq2SeqModel import DecoderOnlyModel  # the training module we just created
 from torch.utils.data import random_split
 from pytorch_lightning.callbacks import ModelCheckpoint
 
@@ -15,18 +15,15 @@ df = pd.read_csv("versatile_dataset_2000.csv")
 
 print(f"\n---------DataFrame shape: {df.shape}---------\n")
 
-
-class Seq2SeqDataset(Dataset):
+class DecoderOnlyDataset(Dataset):
     """
-    Dataset for encoder-decoder training.
-    - Encoder input: tokenized src text
-    - Decoder input: [BOS] + target
-    - Labels: target + [EOS] with -100 for padding
+    Dataset for decoder-only (GPT-style) training.
+    - Input: [BOS] + text
+    - Labels: text + [EOS], with -100 for padding
     """
     def __init__(self, tokenizer, df, max_length=128):
         self.tokenizer = tokenizer
-        self.src_texts = df["text"].tolist()
-        self.tgt_texts = df["completion"].tolist()
+        self.texts = (df["text"] + " " + df["completion"]).tolist()  # merge prompt + target
         self.max_length = max_length
 
         # Ensure special tokens exist
@@ -42,68 +39,45 @@ class Seq2SeqDataset(Dataset):
         self.eos_id = tokenizer.eos_token_id
 
     def __len__(self):
-        return len(self.src_texts)
+        return len(self.texts)
 
     def __getitem__(self, idx):
-        src, tgt = self.src_texts[idx], self.tgt_texts[idx]
+        text = self.texts[idx]
 
-        # ---------------- Encoder ----------------
-        src_enc = self.tokenizer(
-            src,
+        # Tokenize target text (without BOS/EOS for now)
+        enc = self.tokenizer(
+            text,
             truncation=True,
-            max_length=self.max_length,
-            padding="max_length",
-            return_tensors="pt"
+            max_length=self.max_length - 2,  # reserve BOS + EOS
+            return_tensors="pt",
+            add_special_tokens=False
         )
-        src_ids = src_enc["input_ids"].squeeze(0)
-        src_mask = src_enc["attention_mask"].squeeze(0)
+        ids = enc["input_ids"].squeeze(0)
 
-        # ---------------- Decoder ----------------
-        tgt_enc = self.tokenizer(
-            tgt,
-            add_special_tokens=False,
-            truncation=True,
-            max_length=self.max_length - 2,  # reserve BOS+EOS
-            return_tensors="pt"
-        )
-        tgt_ids_raw = tgt_enc["input_ids"].squeeze(0)
+        # Input IDs: [BOS] + text
+        input_ids = torch.cat([torch.tensor([self.bos_id]), ids], dim=0)
 
-        # Decoder input: [BOS] + target
-        tgt_ids = torch.cat(
-            [torch.tensor([self.bos_id]), tgt_ids_raw], dim=0
-        )
+        # Labels: text + [EOS]
+        labels = torch.cat([ids, torch.tensor([self.eos_id])], dim=0)
 
-        # Labels: target + [EOS]
-        labels = torch.cat(
-            [tgt_ids_raw, torch.tensor([self.eos_id])], dim=0
-        )
-
-        # ---------------- Padding ----------------
-        # pad decoder input with pad_id
-        if len(tgt_ids) < self.max_length:
-            pad_len = self.max_length - len(tgt_ids)
-            tgt_ids = torch.cat([tgt_ids, torch.full((pad_len,), self.pad_id)])
+        # Pad input_ids
+        if len(input_ids) < self.max_length:
+            pad_len = self.max_length - len(input_ids)
+            input_ids = torch.cat([input_ids, torch.full((pad_len,), self.pad_id)])
         else:
-            tgt_ids = tgt_ids[:self.max_length]
+            input_ids = input_ids[:self.max_length]
 
-        # pad labels with -100 (ignored by loss)
+        # Pad labels with -100 (ignore index for loss)
         if len(labels) < self.max_length:
             pad_len = self.max_length - len(labels)
             labels = torch.cat([labels, torch.full((pad_len,), -100)])
         else:
             labels = labels[:self.max_length]
 
-        # tgt_mask (for attention)
-        tgt_mask = (tgt_ids != self.pad_id).long()
-
         return {
-            "src_ids": src_ids.long(),
-            "src_mask": src_mask.long(),
-            "tgt_ids": tgt_ids.long(),
-            "tgt_mask": tgt_mask.long(),
+            "input_ids": input_ids.long(),
             "labels": labels.long()
         }
-
 
 
 # ---------------- Setup ----------------
@@ -113,7 +87,7 @@ pad_id = tokenizer.pad_token_id
 
 
 
-dataset = Seq2SeqDataset(tokenizer, df, max_length=32)
+dataset = DecoderOnlyDataset(tokenizer, df, max_length=64)
 
 train_size = int(0.8 * len(dataset))
 val_size = len(dataset) - train_size
@@ -123,12 +97,13 @@ train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=2)
 
 # ---------------- Lightning Model ----------------
-model = CrossAttentionSeq2SeqModel(
+
+
+model = DecoderOnlyModel(
     vocab_size=vocab_size,
     d_model=256,          # smaller d_model for demo
-    max_positions=32,
-    num_encoder_layers=2,
-    num_decoder_layers=2,
+    max_positions=64,
+    num_layers=4,
     num_heads=4,
     d_ff=128,
     tokenizer=tokenizer,
@@ -140,8 +115,8 @@ model = CrossAttentionSeq2SeqModel(
 
 
 checkpoint_callback = ModelCheckpoint(
-    dirpath = 'Seq2SeqCheckpoints',
-    filename = 'Seq2SeqBestModel',
+    dirpath = 'DecoderOnlyCheckpoints',
+    filename = 'DecoderOnlyBestModel',
     save_top_k = 1,
     verbose = True,
     monitor = 'val_loss_epoch',

@@ -3,8 +3,10 @@ import torch.nn as nn
 import pytorch_lightning as pl
 from typing import Optional
 
-from Encoder import Encoder
-from Decoder import Decoder
+from Embedding import TokenEmbeddingModule
+from MultiHeadSelfAttention import MultiHeadSelfAttention
+from AddNorm import AddNorm
+from FFN import PositionwiseFeedForward
 
 # Metrics
 import sacrebleu
@@ -16,15 +18,39 @@ from bert_score import score as bertscore
 
 pl.seed_everything(42)
 
-class Seq2SeqModel(pl.LightningModule):
+# ---------------- Decoder Block (GPT-style) ----------------
+class DecoderBlock(nn.Module):
+    def __init__(self, d_model: int = 256, num_heads: int = 8, d_ff: int = 1024, dropout: float = 0.1):
+        super().__init__()
+        # 1. Masked Self-Attention
+        self.mhsa = MultiHeadSelfAttention(d_model=d_model, num_heads=num_heads, dropout=dropout, causal=True)
+        self.addnorm1 = AddNorm(d_model, dropout=dropout)
+
+        # 2. Feed Forward
+        self.ffn = PositionwiseFeedForward(d_model=d_model, d_ff=d_ff, dropout=dropout, activation="gelu")
+        self.addnorm2 = AddNorm(d_model, dropout=dropout)
+
+    def forward(self, x: torch.Tensor, tgt_mask: Optional[torch.Tensor] = None):
+        # 1. Masked Self-Attention + AddNorm
+        mhsa_out, self_attn = self.mhsa(x, tgt_mask)
+        x = self.addnorm1(x, mhsa_out)
+
+        # 2. Feed Forward + AddNorm
+        ffn_out = self.ffn(x)
+        x = self.addnorm2(x, ffn_out)
+
+        return x, self_attn
+
+
+# ---------------- Decoder-only Transformer ----------------
+class DecoderOnlyModel(pl.LightningModule):
     def __init__(
         self,
         vocab_size: int,
         tokenizer,
         d_model: int = 256,
         max_positions: int = 512,
-        num_encoder_layers: int = 6,
-        num_decoder_layers: int = 6,
+        num_layers: int = 6,
         num_heads: int = 8,
         d_ff: int = 1024,
         dropout: float = 0.1,
@@ -36,35 +62,27 @@ class Seq2SeqModel(pl.LightningModule):
         self.save_hyperparameters(ignore=["tokenizer"])
         self.tokenizer = tokenizer
 
-        # Encoder & Decoder
-        self.encoder = Encoder(
+        # 1. Embeddings
+        self.embedding = TokenEmbeddingModule(
             vocab_size=vocab_size,
             d_model=d_model,
             max_positions=max_positions,
-            num_layers=num_encoder_layers,
-            num_heads=num_heads,
-            d_ff=d_ff,
             dropout=dropout,
             pad_token_id=pad_token_id,
             use_sinusoidal_pos=use_sinusoidal_pos
         )
 
-        self.decoder = Decoder(
-            vocab_size=vocab_size,
-            d_model=d_model,
-            max_positions=max_positions,
-            num_layers=num_decoder_layers,
-            num_heads=num_heads,
-            d_ff=d_ff,
-            dropout=dropout,
-            pad_token_id=pad_token_id,
-            use_sinusoidal_pos=use_sinusoidal_pos
-        )
+        # 2. Decoder Blocks
+        self.layers = nn.ModuleList([
+            DecoderBlock(d_model=d_model, num_heads=num_heads, d_ff=d_ff, dropout=dropout)
+            for _ in range(num_layers)
+        ])
 
-        # Final classifier head
+        # 3. Final LayerNorm + Linear
+        self.norm = nn.LayerNorm(d_model)
         self.classifier = nn.Linear(d_model, vocab_size)
 
-        # Loss — ignore labels with -100
+        # Loss
         self.loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
 
         # Epoch losses
@@ -75,33 +93,32 @@ class Seq2SeqModel(pl.LightningModule):
         self.generated_texts = []
         self.reference_texts = []
 
-    def forward(self, src_ids, tgt_ids, src_mask=None, tgt_mask=None):
-        # Encode
-        enc_out, _ = self.encoder(src_ids, src_mask)
+    def forward(self, input_ids, tgt_mask=None):
+        # Embedding
+        x = self.embedding(input_ids, tgt_mask)
 
-        # Decode
-        dec_out, _, _ = self.decoder(
-            tgt_ids,
-            enc_out,
-            tgt_mask=tgt_mask,
-            memory_mask=src_mask
-        )
+        # Pass through decoder blocks
+        attn_maps = []
+        for layer in self.layers:
+            x, attn = layer(x, tgt_mask)
+            attn_maps.append(attn)
 
-        # Project to vocab
-        logits = self.classifier(dec_out)
-        return logits
+        # Final norm + logits
+        x = self.norm(x)
+        logits = self.classifier(x)  # (B, L, vocab_size)
+
+        return logits, attn_maps
 
     def training_step(self, batch, batch_idx):
-        src_ids, src_mask = batch["src_ids"], batch["src_mask"]
-        tgt_ids, tgt_mask, labels = batch["tgt_ids"], batch["tgt_mask"], batch["labels"]
+        input_ids, labels = batch["input_ids"], batch["labels"]
+        logits, _ = self(input_ids)
 
-        logits = self.forward(src_ids, tgt_ids, src_mask, tgt_mask)
-        loss = self.loss_fn(logits.reshape(-1, logits.size(-1)), labels.reshape(-1))
-
+        loss = self.loss_fn(logits.view(-1, logits.size(-1)), labels.view(-1))
         self.train_epoch_losses.append(loss.detach())
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("train_loss", loss, prog_bar=True)
         return loss
 
+    
     def on_train_epoch_end(self):
         avg_loss = torch.stack(self.train_epoch_losses).mean()
         self.log("train_loss_epoch", avg_loss, prog_bar=True)
@@ -111,11 +128,12 @@ class Seq2SeqModel(pl.LightningModule):
         self.train_epoch_losses = []
 
     def validation_step(self, batch, batch_idx):
-        src_ids, src_mask = batch["src_ids"], batch["src_mask"]
-        tgt_ids, tgt_mask, labels = batch["tgt_ids"], batch["tgt_mask"], batch["labels"]
+        input_ids, labels = batch["input_ids"], batch["labels"]
+        logits, _ = self(input_ids)
 
-        logits = self.forward(src_ids, tgt_ids, src_mask, tgt_mask)
-        loss = self.loss_fn(logits.reshape(-1, logits.size(-1)), labels.reshape(-1))
+        loss = self.loss_fn(logits.view(-1, logits.size(-1)), labels.view(-1))
+        self.val_epoch_losses.append(loss.detach())
+        self.log("val_loss", loss, prog_bar=True)
 
         # Store loss
         self.val_epoch_losses.append(loss.detach())
@@ -183,5 +201,7 @@ class Seq2SeqModel(pl.LightningModule):
         self.generated_texts = []
         self.reference_texts = []
 
+
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)
+

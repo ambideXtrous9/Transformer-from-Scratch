@@ -1,105 +1,155 @@
-# MultiHeadSelfAttention.py
+# MultiHeadSelfAttention.py Module Documentation
 
-## Overview
+## 1. Overview
 
-The `MultiHeadSelfAttention.py` module implements the **Multi-Head Self-Attention (MHSA)** mechanism, the core component of the Transformer. It allows the model to jointly attend to information from different representation subspaces at different positions.
+The `MultiHeadSelfAttention` module is the **core computation engine** of the Transformer. It implements **Scaled Dot-Product Attention** split across multiple parallel "heads," allowing the model to jointly attend to information from different representation subspaces.
 
-## Mechanism
+This single module serves dual purpose:
+-   **Self-Attention** (Encoder & Decoder): Q, K, V all come from the same input.
+-   **Cross-Attention** (Decoder): Q comes from the Decoder, K and V come from the Encoder (via the `kv` parameter).
 
-### Scaled Dot-Product Attention
+## 2. Modules Involved
 
-The basic attention mechanism is defined as:
+-   **torch**, **torch.nn**: Linear projections, softmax, dropout.
+-   **pytorch_lightning**: LightningModule base class.
 
-$$ \text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V $$
+### Dependencies
+This module has **no dependencies** on other custom modules. It is used by:
+-   `Encoder.py` → `EncoderBlock` (causal=False)
+-   `Decoder.py` → `DecoderBlock` (causal=True for self-attn, causal=False for cross-attn)
+-   `DecoderMoE.py` → `DecoderBlockMoE` (causal=True)
+-   `DecoderOnlySeq2SeqModel.py` → `DecoderBlock` (causal=True)
 
-Where:
--   $Q$ (Query), $K$ (Key), $V$ (Value) are matrices.
--   $d_k$ is the dimension of the keys (used for scaling to prevent vanishing gradients).
-
-### Multi-Head Attention
-
-Multi-head attention runs $h$ attention mechanisms (heads) in parallel:
-
-$$ \text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, \dots, \text{head}_h)W^O $$
-
-Where each head is:
-$$ \text{head}_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V) $$
-
-### Mermaid Diagram
+## 3. Architecture
 
 ```mermaid
 graph TD
-    Input[Input Embeddings] --> Proj[Linear Projections Q, K, V]
-    Proj --> Split[Split into h Heads]
+    Input["Input x (B, L, d_model)"]
+    KVInput["Optional kv (B, L_kv, d_model)"]
     
-    subgraph "Per Head"
-        Split --> Q[Q]
-        Split --> K[K]
-        Split --> V[V]
-        Q & K --> Matmul1[Q * K^T]
-        Matmul1 --> Scale[Scale by 1/sqrt(d_k)]
-        Scale --> Mask[Apply Mask]
+    Input --> WQ["W_q: Linear(d_model, d_model)"]
+    Input -.->|if kv=None| WK["W_k: Linear(d_model, d_model)"]
+    Input -.->|if kv=None| WV["W_v: Linear(d_model, d_model)"]
+    KVInput -.->|if kv given| WK
+    KVInput -.->|if kv given| WV
+    
+    WQ --> Split["Split into h Heads"]
+    WK --> Split
+    WV --> Split
+    
+    subgraph "Per Head (d_k = d_model / h)"
+        Split --> QH["Q_h (B, 1, L, d_k)"]
+        Split --> KH["K_h (B, 1, L_kv, d_k)"]
+        Split --> VH["V_h (B, 1, L_kv, d_k)"]
+        
+        QH --> MatMul1["Q × K^T"]
+        KH --> MatMul1
+        MatMul1 --> Scale["÷ √d_k"]
+        Scale --> Mask["Apply Masks"]
         Mask --> Softmax
-        Softmax --> Drop[Dropout]
-        Drop & V --> Matmul2[Attn * V]
+        Softmax --> DropA[Dropout]
+        DropA --> MatMul2["Attn × V"]
+        VH --> MatMul2
     end
     
-    Matmul2 --> Concat[Concatenate Heads]
-    Concat --> Linear[Final Linear Projection]
-    Linear --> Output
+    MatMul2 --> Concat["Concatenate h Heads"]
+    Concat --> WO["W_o: Linear(d_model, d_model)"]
+    WO --> Output["Output (B, L, d_model)"]
 ```
 
-## Class Definition: `MultiHeadSelfAttention`
+## 4. Class Definition
 
-Inherits from `pl.LightningModule`.
+### `class MultiHeadSelfAttention(LightningModule)`
 
-### `__init__`
+#### `__init__`
+-   **d_model**: Total dimension. Must be divisible by `num_heads`.
+-   **num_heads**: Number of parallel attention heads.
+-   **d_k**: Dimension per head = `d_model // num_heads`.
+-   **causal**: If True, applies a lower-triangular mask (future tokens masked).
+-   **Projections**: `W_q`, `W_k`, `W_v`, `W_o` — all `nn.Linear(d_model, d_model)`.
 
--   **Parameters**:
-    -   `d_model`: Total dimension of the model.
-    -   `num_heads`: Number of parallel attention heads.
-    -   `dropout`: Dropout probability.
-    -   `causal`: If `True`, applies a causal mask (prevents attending to future tokens), used in Decoders.
+#### `forward(self, x, mask=None, kv=None)`
+-   **x**: Query source `(B, L, d_model)`.
+-   **mask**: Padding mask `(B, L)` or pre-broadcast shape.
+-   **kv**: Optional Key/Value source `(B, L_kv, d_model)` for cross-attention.
+-   **Returns**: `(output, attn_weights)`.
 
-### `forward`
+## 5. Step-by-Step Logic
 
--   **Args**:
-    -   `x`: Input tensor for Query (and Key/Value if `kv` is None).
-    -   `mask`: Padding mask (prevents attending to pad tokens).
-    -   `kv`: Optional input for Key/Value (used for **Cross-Attention** where Q comes from Decoder and K/V from Encoder).
-    
--   **Logic**:
-    1.  Project inputs to Q, K, V.
-    2.  Split heads/shapes: `(Batch, Seq_Len, d_model)` -> `(Batch, Num_Heads, Seq_Len, d_k)`.
-    3.  Compute Scaled Dot-Product Attention.
-    4.  Apply masks (if provided).
-    5.  Concatenate heads.
-    6.  Final linear projection.
+1.  **Resolve KV**: If `kv` is None → Self-Attention (K, V from `x`). Else → Cross-Attention.
 
-## Usage Example
+2.  **Project**:
+    -   `Q = W_q(x)` → `(B, L, d_model)`
+    -   `K = W_k(kv)` → `(B, L_kv, d_model)`
+    -   `V = W_v(kv)` → `(B, L_kv, d_model)`
+
+3.  **Split Heads**: Reshape from `(B, L, d_model)` → `(B, num_heads, L, d_k)`.
+    ```
+    (B, L, d_model) → view(B, L, H, d_k) → transpose(1,2) → (B, H, L, d_k)
+    ```
+
+4.  **Scaled Dot-Product**:
+    -   $\text{scores} = \frac{Q \cdot K^T}{\sqrt{d_k}}$ → `(B, H, L, L_kv)`.
+
+5.  **Apply Masks**:
+    -   **Padding Mask**: Sets scores for PAD positions to $-\infty$.
+    -   **Causal Mask** (if `causal=True`): Lower-triangular matrix; future positions set to $-\infty$.
+
+6.  **Softmax + Dropout**: `attn_weights = Dropout(Softmax(scores))`.
+
+7.  **Weighted Sum**: `out = attn_weights × V` → `(B, H, L, d_k)`.
+
+8.  **Concat Heads**: `(B, H, L, d_k)` → `(B, L, d_model)`.
+
+9.  **Output Projection**: `out = W_o(out)`.
+
+## 6. Dry Run Trace
+
+**Scenario**: `d_model=4`, `num_heads=2`, `d_k=2`, `causal=True`, `Batch=1`, `Seq=3`.
+
+**Input**: `x = [[x0, x1, x2]]` — 3 tokens, each a 4-dim vector.
+
+| Step | Operation | Shape | Notes |
+|------|-----------|-------|-------|
+| 1 | Q = W_q(x) | `(1, 3, 4)` | |
+| 2 | K = W_k(x) | `(1, 3, 4)` | Self-attn: K from x |
+| 3 | V = W_v(x) | `(1, 3, 4)` | Self-attn: V from x |
+| 4 | Split Q | `(1, 2, 3, 2)` | 2 heads, d_k=2 |
+| 5 | Split K | `(1, 2, 3, 2)` | |
+| 6 | Split V | `(1, 2, 3, 2)` | |
+| 7 | Q × K^T | `(1, 2, 3, 3)` | Raw attention scores |
+| 8 | ÷ √2 | `(1, 2, 3, 3)` | Scaled |
+| 9 | Causal mask | | Apply lower-triangular: |
+| | | | `[[s00, -inf, -inf],` |
+| | | | ` [s10, s11, -inf],` |
+| | | | ` [s20, s21, s22]]` |
+| 10 | Softmax | `(1, 2, 3, 3)` | Row-wise softmax |
+| 11 | Dropout | `(1, 2, 3, 3)` | |
+| 12 | Attn × V | `(1, 2, 3, 2)` | Weighted values |
+| 13 | Concat | `(1, 3, 4)` | Heads merged |
+| 14 | W_o | `(1, 3, 4)` | Final projection |
+
+**Token 0 (pos 0)**: Can only attend to itself → output is purely a function of `x0`.
+**Token 2 (pos 2)**: Can attend to `x0`, `x1`, `x2` → output integrates all context.
+
+## 7. Code Example
 
 ```python
 import torch
 from MultiHeadSelfAttention import MultiHeadSelfAttention
 
-# 1. Config
-d_model = 256
-num_heads = 8
+# Self-Attention (Encoder-style)
+mhsa = MultiHeadSelfAttention(d_model=256, num_heads=8, causal=False)
+x = torch.randn(2, 10, 256)
+out, attn = mhsa(x)
+print("Self-Attn Output:", out.shape)   # (2, 10, 256)
+print("Attn Weights:", attn.shape)      # (2, 8, 10, 10)
 
-# 2. Init
-mhsa = MultiHeadSelfAttention(
-    d_model=d_model,
-    num_heads=num_heads,
-    causal=False
-)
-
-# 3. Dummy Input
-x = torch.randn(2, 10, d_model) # (Batch, Seq, Dim)
-mask = torch.ones(2, 10) # Attention Mask
-
-# 4. Forward
-output, attn_weights = mhsa(x, mask=mask)
-
-print("Output Shape:", output.shape)
-# Expected: torch.Size([2, 10, 256])
+# Cross-Attention (Decoder-style)
+cross_attn = MultiHeadSelfAttention(d_model=256, num_heads=8, causal=False)
+query = torch.randn(2, 5, 256)   # Decoder queries
+kv = torch.randn(2, 10, 256)     # Encoder output
+out, attn = cross_attn(query, kv=kv)
+print("Cross-Attn Output:", out.shape)  # (2, 5, 256)
+print("Attn Weights:", attn.shape)      # (2, 8, 5, 10)
 ```

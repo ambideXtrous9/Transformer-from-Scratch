@@ -1,74 +1,89 @@
-# FFN.py
+# FFN.py Module Documentation
 
-## Overview
+## 1. Overview
 
-The `FFN.py` module implements the **Position-wise Feed-Forward Network (FFN)**. In the Transformer architecture, this network is applied to each position separately and identically. It consists of two linear transformations with a non-linear activation function in between.
+The `FFN` module implements the **Position-wise Feed-Forward Network**, a two-layer MLP applied independently and identically to each position in the sequence. It expands the representation to a higher dimension, applies a non-linearity, and projects it back.
 
-## Architecture
+## 2. Modules Involved
 
-The FFN performs the following operations:
-1.  Projects input from $d_{model}$ to a larger dimension $d_{ff}$ (usually $4 \times d_{model}$).
-2.  Applies a non-linear activation function (ReLU or GELU).
-3.  Applies Dropout.
-4.  Projects back from $d_{ff}$ to $d_{model}$.
+-   **torch**, **torch.nn**: Linear layers, dropout, activation functions.
+-   **pytorch_lightning**: LightningModule base class.
 
-### Mathematical Formulation
+### Dependencies
+This module has **no dependencies** on other custom modules. It is used by:
+-   `Encoder.py` (in `EncoderBlock`)
+-   `Decoder.py` (in `DecoderBlock`)
+-   `DecoderOnlySeq2SeqModel.py` (in `DecoderBlock`)
 
-$$ FFN(x) = \text{Linear}_2(\text{Dropout}(\text{Activation}(\text{Linear}_1(x)))) $$
+*Note: `DecoderMoE.py` does NOT use this module — it defines its own `ExpertMLP` and `MoEFeedForward`.*
 
-### Mermaid Diagram
+## 3. Architecture
 
 ```mermaid
 graph LR
-    Input[Input x <br> (d_model)] --> Linear1[Linear 1 <br> (d_model -> d_ff)]
-    Linear1 --> Activation[Activation <br> (ReLU/GELU)]
-    Activation --> Dropout
-    Dropout --> Linear2[Linear 2 <br> (d_ff -> d_model)]
-    Linear2 --> Output
+    Input["Input x \n (B, L, d_model)"] --> FC1["Linear 1 \n (d_model → d_ff)"]
+    FC1 --> Act["Activation \n (ReLU or GELU)"]
+    Act --> Drop[Dropout]
+    Drop --> FC2["Linear 2 \n (d_ff → d_model)"]
+    FC2 --> Output["Output \n (B, L, d_model)"]
 ```
 
-## Class Definition: `PositionwiseFeedForward`
+### Mathematical Formula
 
-Inherits from `pl.LightningModule`.
+$$FFN(x) = W_2 \cdot \text{Dropout}(\text{Activation}(W_1 \cdot x + b_1)) + b_2$$
 
-### `__init__`
+Where typically $d_{ff} = 4 \times d_{model}$.
 
--   **Parameters**:
-    -   `d_model`: Input/output dimension.
-    -   `d_ff`: Hidden dimension.
-    -   `dropout`: Dropout probability.
-    -   `activation`: "relu" or "gelu".
+## 4. Class: `PositionwiseFeedForward`
 
-### `forward`
+### `__init__(self, d_model, d_ff, dropout, activation)`
 
--   **Args**:
-    -   `x`: Input tensor of shape `(Batch, Seq_Len, d_model)`.
--   **Returns**:
-    -   Output tensor of the same shape.
+-   `self.fc1`: `nn.Linear(d_model, d_ff)`.
+-   `self.fc2`: `nn.Linear(d_ff, d_model)`.
+-   `self.activation`: `nn.ReLU()` or `nn.GELU()`.
+-   `self.dropout`: `nn.Dropout(dropout)`.
 
-## Usage Example
+### `forward(self, x) -> torch.Tensor`
+
+-   Input: `(B, L, d_model)`.
+-   Output: `(B, L, d_model)`.
+-   One-liner: `return self.fc2(self.dropout(self.activation(self.fc1(x))))`.
+
+## 5. Step-by-Step Logic
+
+1.  **Expand**: `fc1` projects from $d_{model}$ to $d_{ff}$ (e.g., 256 → 1024).
+    -   This larger space allows the model to learn more complex representations.
+2.  **Activate**: Non-linear activation (GELU is smoother than ReLU and often preferred).
+3.  **Dropout**: Randomly zeroes elements during training for regularization.
+4.  **Compress**: `fc2` projects back from $d_{ff}$ to $d_{model}$ (1024 → 256).
+
+## 6. Dry Run Trace
+
+**Scenario**: `d_model=4`, `d_ff=8`, activation=GELU, dropout=0.
+
+**Input**: `x = [[1.0, -0.5, 0.3, 0.8]]` (1 token, d_model=4)
+
+| Step | Operation | Result |
+|------|-----------|--------|
+| 1 | `fc1(x)`: Linear(4→8) | `[0.2, -1.1, 0.5, 0.9, -0.3, 0.7, 1.2, -0.4]` (8 values) |
+| 2 | GELU activation | `[0.17, -0.15, 0.35, 0.73, -0.11, 0.56, 1.08, -0.13]` |
+| 3 | Dropout (p=0) | No change |
+| 4 | `fc2(x)`: Linear(8→4) | `[0.45, -0.22, 0.67, 0.31]` (back to 4 values) |
+
+**Output**: `[0.45, -0.22, 0.67, 0.31]` — transformed representation of the same dimension.
+
+### Why the expansion?
+The intermediate expansion to $d_{ff}$ creates a "bottleneck" architecture. The larger hidden space allows the network to learn richer representations before compressing back. This is analogous to how autoencoders work.
+
+## 7. Code Example
 
 ```python
 import torch
 from FFN import PositionwiseFeedForward
 
-# 1. Config
-d_model = 256
-d_ff = 1024
+ffn = PositionwiseFeedForward(d_model=256, d_ff=1024, activation="gelu")
 
-# 2. Init
-ffn = PositionwiseFeedForward(
-    d_model=d_model,
-    d_ff=d_ff,
-    dropout=0.1,
-    activation="gelu"
-)
-
-# 3. Dummy Input
-x = torch.randn(2, 10, d_model)
-
-# 4. Forward
+x = torch.randn(2, 10, 256)  # Batch=2, Seq=10
 output = ffn(x)
-print("Output Shape:", output.shape)
-# Expected: torch.Size([2, 10, 256])
+print("Output:", output.shape)  # (2, 10, 256)
 ```

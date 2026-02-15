@@ -1,130 +1,164 @@
-# Decoder.py
+# Decoder.py Module Documentation
 
-## Overview
+## 1. Overview
 
-The `Decoder.py` module implements the **Transformer Decoder**, which is responsible for generating target sequences auto-regressively. It processes target input tokens and attends to the Encoder's output to generate the next token in the sequence.
+The `Decoder` module implements the **Transformer Decoder**, a stack of layers that consumes a target sequence (and optionally an encoder's output) to generate the next token in the sequence. It is designed to be autoregressive, meaning it cannot look ahead at future tokens during training (masked self-attention).
 
-## Architecture
+## 2. Modules Involved
 
-### Decoder Block
+-   **torch**: Core PyTorch library.
+-   **torch.nn**: Neural network building blocks.
+-   **pytorch_lightning**: LightningModule base class.
 
-Each `DecoderBlock` consists of three sub-layers, each followed by an **Add & Norm** operation:
-1.  **Masked Multi-Head Self-Attention**: Attends to previous tokens in the target sequence (causal masking).
-2.  **Cross-Attention**: Attends to the Encoder's output (using query from Decoder, key/value from Encoder).
-3.  **Position-wise Feed-Forward Network (FFN)**: Processes each position independently.
+### Dependencies
+This module relies on the following custom components:
+-   `Embedding` (for `TokenEmbeddingModule`): To convert token IDs into dense vectors.
+-   `MultiHeadSelfAttention` (from `MultiHeadSelfAttention.py`): For both Masked Self-Attention and Cross-Attention.
+-   **AddNorm** (from `AddNorm.py`): For residual connections and layer normalization.
+-   **FFN** (from `FFN.py`): For the Position-wise Feed-Forward Network.
 
-### Mermaid Diagram: Decoder Block
+## 3. Architecture
+
+The Decoder consists of an Embedding layer followed by $N$ identical `DecoderBlock`s. Each block has three sub-layers:
+1.  **Masked Multi-Head Self-Attention**: Attends to previous positions in the target sequence.
+2.  **Cross-Attention (Encoder-Decoder Attention)**: Attends to the Encoder's output.
+3.  **Feed-Forward Network (FFN)**: Processes positions independently.
+
+### Architecture Diagram
 
 ```mermaid
 graph TD
-    Input[Input Tensor] --> MHSA[Masked Self-Attention]
-    MHSA --> AddNorm1[Add & Norm]
+    Input[Target Input IDs] --> Embed[Token + Positional Embedding]
+    Embed --> Block1[Decoder Block 1]
     
-    AddNorm1 --> CrossAttn[Cross-Attention]
-    EncOut[Encoder Output] -.-> CrossAttn
+    subgraph "Decoder Block"
+        BlockInput[Input from Prev Layer] --> MHSA[Masked Self-Attention]
+        MHSA --> AddNorm1[Add & Norm]
+        
+        AddNorm1 --> Cross[Cross-Attention]
+        EncOut[Encoder Output \n (Key/Value)] -.-> Cross
+        Cross --> AddNorm2[Add & Norm]
+        
+        AddNorm2 --> FFN[Feed-Forward Network]
+        FFN --> AddNorm3[Add & Norm]
+    end
     
-    CrossAttn --> AddNorm2[Add & Norm]
-    
-    AddNorm2 --> FFN[Feed-Forward Network]
-    FFN --> AddNorm3[Add & Norm]
-    
-    AddNorm3 --> Output[Output Tensor]
+    Block1 --> Block2[Decoder Block 2]
+    Block2 --> Norm[Final Layer Norm]
+    Norm --> Output[Contextualized Output]
 ```
 
-### Decoder Stack
+## 4. Class Definitions
 
-The `Decoder` class consists of:
-1.  **Token Embedding**: Converts token IDs to vectors.
-2.  **Positional Encoding**: Adds positional information (sinusoidal).
-3.  **Stack of Decoder Blocks**: `num_layers` of `DecoderBlock`.
-4.  **Final Layer Norm**: Normalizes the final output.
+### `class DecoderBlock(LightningModule)`
 
-## Class Definitions
+#### `__init__(self, d_model, num_heads, d_ff, dropout)`
+-   Initializes the three sub-layers and their corresponding `AddNorm` modules.
+    -   `self.mhsa`: `causal=True`
+    -   `self.cross_attn`: `causal=False` (but uses `enc_out` as KV)
+    -   `self.ffn`
 
-Inherits from `pl.LightningModule`.
+#### `forward(self, x, enc_out, tgt_mask, memory_mask)`
+-   **x**: Input from previous layer `(Batch, Seq_Len, d_model)`.
+-   **enc_out**: Encoder output `(Batch, Src_Len, d_model)`.
+-   **tgt_mask**: Causal mask for self-attention.
+-   **memory_mask**: Padding mask for cross-attention (masks source padding).
 
-### 1. `DecoderBlock`
+### `class Decoder(LightningModule)`
 
-#### `__init__` Parameters:
--   `d_model`, `num_heads`, `d_ff`, `dropout`.
+#### `__init__(self, vocab_size, d_model, ...)`
+-   Initializes the `TokenEmbeddingModule`, a `ModuleList` of `DecoderBlock`s, and the final `LayerNorm`.
 
-#### `forward` Arguments:
--   `x`: Input tensor from previous layer.
--   `enc_out`: Output from the Encoder (for Cross-Attention).
--   `tgt_mask`: Mask for Self-Attention (usually causal mask).
--   `memory_mask`: Mask for Cross-Attention (source padding mask).
+#### `forward(self, input_ids, enc_out, tgt_mask, memory_mask)`
+-   **input_ids**: Target sequence IDs `(Batch, Tgt_Len)`.
+-   **enc_out**: Encoder representations.
+-   **Returns**:
+    -   `x`: Output tensor `(Batch, Tgt_Len, d_model)`.
+    -   `self_attn_maps`: List of self-attention weights from each layer.
+    -   `cross_attn_maps`: List of cross-attention weights from each layer.
 
-#### Returns:
--   `x`: Processed tensor.
--   `self_attn`: Attention weights from Masked Self-Attention.
--   `cross_attn`: Attention weights from Cross-Attention.
+## 5. Step-by-Step Logic
 
----
+1.  **Embedding**: 
+    -   `input_ids` are converted to vectors and summed with positional encodings.
+    -   Shape: `(Batch, Tgt_Len)` -> `(Batch, Tgt_Len, d_model)`.
 
-### 2. `Decoder`
+2.  **Layer Stacking**:
+    -   The tensor passes through each `DecoderBlock` sequentially.
+    -   **Inside Block**:
+        1.  **Masked Self-Attention**: The model attends to itself. The `tgt_mask` ensures position $i$ can only attend to positions $0...i$.
+            -   `x = AddNorm(x, MHSA(x))`
+        2.  **Cross-Attention**: The model attends to the Encoder Output.
+            -   Query = `x` (from previous step).
+            -   Key/Value = `enc_out`.
+            -   `x = AddNorm(x, CrossAttn(x, kv=enc_out))`
+        3.  **FFN**:
+            -   `x = AddNorm(x, FFN(x))`
 
-#### `__init__` Parameters:
--   `vocab_size`: Size of the target vocabulary.
--   `d_model`, `max_positions`, `num_layers`, `num_heads`, `d_ff`, `dropout`, `pad_token_id`, `use_sinusoidal_pos`.
+3.  **Final Normalization**:
+    -   The output of the last block is normalized using `LayerNorm`.
 
-#### `forward` Arguments:
--   `input_ids`: Target token IDs. Shape: `(Batch, Seq_Len)`.
--   `enc_out`: Encoder output. Shape: `(Batch, Src_Seq_Len, d_model)`.
--   `tgt_mask`: Causal mask for target sequence.
--   `memory_mask`: Padding mask for source sequence.
+## 6. Dry Run Trace
 
-#### Logic:
-1.  **Embed**: Get token embeddings and add positional encodings.
-    ```python
-    x = self.embedding(input_ids, tgt_mask)
-    ```
-2.  **Layer Stack**: Pass through `num_layers` of `DecoderBlock`. Collect attention maps for visualization.
-3.  **Normalize**: Apply final Layer Normalization.
-    ```python
-    x = self.norm(x)
-    ```
+**Scenario**:
+-   `Batch` = 1
+-   `Tgt_Len` = 2 (`[BOS, Token1]`)
+-   `d_model` = 4
+-   `enc_out` shape = `(1, 3, 4)` (Source Length 3)
 
-#### Returns:
--   `x`: Final representation. Shape: `(Batch, Seq_Len, d_model)`.
--   `self_attn_maps`: List of self-attention weights from each layer.
--   `cross_attn_maps`: List of cross-attention weights from each layer.
+**Trace**:
 
-## Example Usage
+1.  **Input**:
+    -   `input_ids`: `[[1, 10]]`
+    -   `enc_out`: Random tensor `(1, 3, 4)`
+    
+2.  **Embedding**:
+    -   Output `x`: `(1, 2, 4)`
+
+3.  **Decoder Block 1**:
+    -   **Masked Self-Attn**:
+        -   Pos 0 attends to Pos 0.
+        -   Pos 1 attends to Pos 0, 1.
+        -   Output `(1, 2, 4)`.
+        -   AddNorm -> `x` `(1, 2, 4)`.
+    -   **Cross-Attn**:
+        -   Query `(1, 2, 4)` vs Key `(1, 3, 4)`.
+        -   Attention Matrix `(1, Heads, 2, 3)` (Each target token attends to all source tokens).
+        -   Output `(1, 2, 4)`.
+        -   AddNorm -> `x`.
+    -   **FFN**:
+        -   Linear(4->16) -> Relu -> Linear(16->4).
+        -   Output `(1, 2, 4)`.
+        -   AddNorm -> `x`.
+
+4.  **Decoder Block 2** (if num_layers=2):
+    -   Repeat steps above with input from Block 1.
+    -   Output `x`: `(1, 2, 4)`.
+
+5.  **Final Norm**:
+    -   Returns normalized `(1, 2, 4)`.
+
+## 7. Code Example
 
 ```python
 import torch
 from Decoder import Decoder
 
-# 1. Setup
-vocab_size = 1000
-d_model = 256
-batch_size = 2
-tgt_seq_len = 10
-src_seq_len = 12
+# Init
+decoder = Decoder(vocab_size=100, d_model=4, num_layers=1, num_heads=2)
 
-# 2. Initialize Decoder
-decoder = Decoder(
-    vocab_size=vocab_size,
-    d_model=d_model,
-    num_layers=2,
-    num_heads=4
-)
+# Data
+tgt_ids = torch.randint(0, 100, (1, 5)) # Batch 1, Seq 5
+enc_out = torch.randn(1, 8, 4)          # Batch 1, Src 8, Dim 4
+tgt_mask = torch.tril(torch.ones(5, 5)).view(1, 1, 5, 5) # Causal Mask
 
-# 3. Simulate Inputs
-tgt_ids = torch.randint(0, vocab_size, (batch_size, tgt_seq_len))
-enc_out = torch.randn(batch_size, src_seq_len, d_model) # From Encoder
-
-# 4. Create Masks (Simplified)
-# Causal mask for target
-tgt_mask = torch.tril(torch.ones(tgt_seq_len, tgt_seq_len)).unsqueeze(0).unsqueeze(0) 
-
-# 5. Forward Pass
-output, self_attns, cross_attns = decoder(
-    input_ids=tgt_ids,
-    enc_out=enc_out,
+# Forward
+out, self_attns, cross_attns = decoder(
+    input_ids=tgt_ids, 
+    enc_out=enc_out, 
     tgt_mask=tgt_mask
 )
 
-print("Decoder Output:", output.shape) 
-# Expected: torch.Size([2, 10, 256])
+print("Output Shape:", out.shape)
+# Expected: torch.Size([1, 5, 4])
 ```

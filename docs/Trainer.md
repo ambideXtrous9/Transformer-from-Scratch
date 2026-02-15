@@ -1,70 +1,114 @@
-# Trainer.py
+# Trainer.py Module Documentation
 
-## Overview
+## 1. Overview
 
-The `Trainer.py` script orchestrates the training process for the **Encoder-Decoder (Seq2Seq)** model. It prepares the source-target pairs, initializes the `CrossAttentionSeq2SeqModel`, and uses PyTorch Lightning for the training loop.
+This script orchestrates the **training pipeline** for the **Encoder-Decoder (Seq2Seq) Transformer** model (`CrossAttentionSeq2SeqModel`). Unlike the Decoder-Only trainers, this prepares separate source and target sequences.
 
-## Data Pipeline
+## 2. Modules Involved
 
-### `Seq2SeqDataset`
+-   **torch**: Tensor operations and data utilities.
+-   **torch.utils.data**: `Dataset`, `DataLoader`, `random_split`.
+-   **pytorch_lightning**: `Trainer`, `ModelCheckpoint`, `seed_everything`.
+-   **pandas**: Reading CSV data.
 
-Prepares paired data for translation or sequence-to-sequence tasks.
+### Dependencies
+-   `Embedding.py` → `get_tokenizer`: Provides the tokenizer.
+-   `CrossAttentionSeq2SeqModel.py` → `CrossAttentionSeq2SeqModel`: The model being trained.
 
--   **Inputs**: CSV file with `text` (Source) and `completion` (Target).
--   **Encoder Processing**:
-    -   Tokenizes source text.
-    -   Pads to `max_length`.
-    -   Returns `src_ids` and `src_mask`.
--   **Decoder Processing**:
-    -   Tokenizes target text.
-    -   **Input**: `[BOS]` + Target.
-    -   **Labels**: Target + `[EOS]`.
-    -   Pads to `max_length`.
-
-### Mermaid Diagram: Seq2Seq Data Flow
+## 3. Architecture
 
 ```mermaid
 graph TD
-    Raw[CSV Data] --> Dataset[Seq2SeqDataset]
+    CSV[versatile_dataset_2000.csv] --> DF[DataFrame]
+    DF --> Dataset[Seq2SeqDataset]
     
-    subgraph "GetItem"
-        Dataset --> Src[Source Text]
-        Dataset --> Tgt[Target Text]
-        
-        Src --> TokSrc[Tokenize source]
-        TokSrc --> EncIn[Encoder Inputs]
-        
-        Tgt --> TokTgt[Tokenize target]
-        TokTgt --> DecIn[Decoder Input <br> (BOS + Target)]
-        TokTgt --> Labels[Labels <br> (Target + EOS)]
+    subgraph "Seq2SeqDataset.__getitem__"
+        Text[text column] --> SrcTok[Tokenize Source]
+        Completion[completion column] --> TgtTok[Tokenize Target]
+        SrcTok --> SrcIDs[src_ids + src_mask]
+        TgtTok --> DecIn["Decoder Input: [BOS] + target"]
+        TgtTok --> Labels["Labels: target + [EOS]"]
     end
     
-    EncIn & DecIn & Labels --> Batch
-    Batch --> Model[CrossAttentionSeq2SeqModel]
+    Dataset --> Split[80/20 Split]
+    Split --> TL[Train Loader \n batch_size=4]
+    Split --> VL[Val Loader \n batch_size=2]
+    
+    TL & VL --> Trainer[PL Trainer]
+    Trainer --> Model[CrossAttentionSeq2SeqModel]
+    Trainer --> CK[Checkpoint]
+    CK --> Disk[CrossAttentionSeq2SeqCheckpoints/]
 ```
 
-## Training Configuration
+## 4. Class: `Seq2SeqDataset`
 
--   **Model**: `CrossAttentionSeq2SeqModel`.
--   **Hyperparameters**:
-    -   `d_model`: 256
-    -   `num_encoder_layers`: 2
-    -   `num_decoder_layers`: 2
-    -   `num_heads`: 4
-    -   `d_ff`: 128
--   **Trainer**:
-    -   `max_epochs`: 100
-    -   `accelerator`: GPU.
-    -   `callbacks`: ModelCheckpoint (saves to `CrossAttentionSeq2SeqCheckpoints`).
+Prepares paired source-target data for encoder-decoder training.
 
-## Usage
+### `__getitem__` Step-by-Step
 
-Run the script to start training:
+1.  **Read row**: Get `text` (source) and `completion` (target).
+
+2.  **Encode Source** (for Encoder):
+    -   Tokenize with padding to `max_length`.
+    -   Result: `src_ids` `(max_length)` and `src_mask`.
+
+3.  **Encode Target** (for Decoder):
+    -   Tokenize **without** special tokens, truncate to `max_length - 2`.
+    -   **Decoder Input**: Prepend `[BOS]` → `[BOS, t1, t2, ...]`.
+    -   **Labels**: Append `[EOS]` → `[t1, t2, ..., EOS]`.
+    -   Pad both to `max_length`:
+        -   Decoder Input padded with `pad_token_id`.
+        -   Labels padded with `-100` (ignored by loss).
+
+4.  **Create tgt_mask**: `(tgt_ids != pad_id).long()`.
+
+5.  **Return**: `{src_ids, src_mask, tgt_ids, tgt_mask, labels}`.
+
+### Why BOS/EOS Separation?
+
+The decoder input is **shifted right** relative to the labels:
+
+```
+Decoder Input:  [BOS]  t1   t2   t3   [PAD]
+Labels:          t1    t2   t3  [EOS]  -100
+```
+
+At each position, the model predicts the **next** token. This is the standard teacher-forcing paradigm.
+
+## 5. Dry Run Trace
+
+**CSV Row**: `text="Hello"`, `completion="World is great"`.
+
+| Step | Operation | Result |
+|------|-----------|--------|
+| 1 | Tokenize Source | `src_ids = [15496, PAD, PAD, ...]` (padded to 32) |
+| | | `src_mask = [1, 0, 0, ...]` |
+| 2 | Tokenize Target | `raw = [10603, 318, 1049]` ("World is great") |
+| 3 | Decoder Input | `tgt_ids = [BOS, 10603, 318, 1049, PAD, ...]` |
+| 4 | Labels | `labels = [10603, 318, 1049, EOS, -100, ...]` |
+| 5 | tgt_mask | `[1, 1, 1, 1, 0, ...]` |
+| 6 | Forward | Encoder processes `src_ids` → `enc_out` |
+| | | Decoder processes `tgt_ids` with cross-attn to `enc_out` → `logits` |
+| 7 | Loss | CrossEntropy(`logits`, `labels`), ignoring -100 positions |
+
+## 6. Configuration
+
+| Parameter | Value |
+|-----------|-------|
+| d_model | 256 |
+| num_encoder_layers | 2 |
+| num_decoder_layers | 2 |
+| num_heads | 4 |
+| d_ff | 128 |
+| max_epochs | 100 |
+| batch_size (train) | 4 |
+| Learning Rate | 1e-3 |
+| Checkpoint metric | val_loss_epoch (min) |
+
+## 7. Usage
 
 ```bash
 python Trainer.py
 ```
 
-Prerequisites:
--   `versatile_dataset_2000.csv`
--   `CrossAttentionSeq2SeqModel.py`
+Requires `versatile_dataset_2000.csv`. Best model saved to `CrossAttentionSeq2SeqCheckpoints/`.

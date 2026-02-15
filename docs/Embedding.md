@@ -1,89 +1,107 @@
-# Embedding.py
+# Embedding.py Module Documentation
 
-## Overview
+## 1. Overview
 
-The `Embedding.py` module handles the transformation of raw text into dense vector representations. It includes utilities for tokenization and implements the **Embedding Layer** of the Transformer, which consists of both **Token Embeddings** and **Positional Encodings**.
+The `Embedding` module converts raw token IDs into dense vector representations. It contains tokenization utilities and the core embedding infrastructure that combines **Token Embeddings** with **Positional Encodings**—the first step in every Transformer pipeline.
 
-## Architecture
+## 2. Modules Involved
 
-The `TokenEmbeddingModule` combines two types of embeddings:
-1.  **Token Embedding**: Maps each token ID to a dense vector of size $d_{model}$. Scaled by $\sqrt{d_{model}}$.
-2.  **Positional Encoding**: Adds information about the position of tokens in the sequence (either learnable or fixed sinusoidal).
+-   **torch**, **torch.nn**: Embedding layers and tensor ops.
+-   **pytorch_lightning**: LightningModule base class.
+-   **transformers** (HuggingFace): `AutoTokenizer` for loading pre-trained tokenizers.
+-   **math**: For sinusoidal encoding computation.
 
-### Mermaid Diagram
+### Dependencies
+This module has **no dependencies** on other custom modules. It is the foundational module that all others depend on:
+-   Used by: `Encoder.py`, `Decoder.py`, `DecoderMoE.py`, `DecoderOnlySeq2SeqModel.py`, `FFN.py`, `MultiHeadSelfAttention.py`, `AddNorm.py`.
+
+## 3. Architecture
 
 ```mermaid
-graph LR
-    Input[Input IDs] --> TokenEmb[Token Embedding]
-    TokenEmb --> Scale[Scale by sqrt(d_model)]
+graph TD
+    InputIDs[Input Token IDs \n (B, L)] --> TokenEmb[Token Embedding \n nn.Embedding]
+    TokenEmb --> Scale["Scale by √d_model"]
     
-    Position[Position Indices] --> PosEmb[Positional Embedding]
+    Positions[Position Indices \n 0, 1, 2, ...] --> PosEmb{Positional Embedding}
+    PosEmb -->|Sinusoidal| Fixed[Fixed sin/cos Encoding]
+    PosEmb -->|Learnable| Learned[nn.Embedding]
     
-    Scale --> Add(+)
-    PosEmb --> Add
+    Scale --> Add((+))
+    Fixed --> Add
+    Learned --> Add
     
     Add --> Dropout
-    Dropout --> Output[Final Embeddings]
+    Dropout --> Output[Embedded Tensor \n (B, L, d_model)]
 ```
 
-## detailed Components
+## 4. Component Definitions
 
-### 1. Tokenization Utilities
+### `get_tokenizer(name, add_pad_token_if_missing)`
+-   Loads a HuggingFace tokenizer (default: `"gpt2"`).
+-   Optionally adds a pad token if missing (GPT-2 doesn't have one by default).
 
--   `get_tokenizer`: Loads a pre-trained tokenizer (default: GPT-2).
--   `tokenize_batch`: Tokenizes a list of strings with padding and truncation.
+### `tokenize_batch(tokenizer, texts, max_length)`
+-   Tokenizes a list of strings with padding and truncation.
+-   Returns a dict with `input_ids` and `attention_mask` tensors.
 
-### 2. `sinusoidal_positional_encoding`
+### `sinusoidal_positional_encoding(max_len, d_model)`
+-   Generates fixed positional encodings using sine/cosine functions.
+-   **Formula**:
+    -   Even dims: $PE_{(pos, 2i)} = \sin\left(\frac{pos}{10000^{2i/d_{model}}}\right)$
+    -   Odd dims: $PE_{(pos, 2i+1)} = \cos\left(\frac{pos}{10000^{2i/d_{model}}}\right)$
+-   Returns tensor of shape `(max_len, d_model)`.
 
-Generates fixed positional encodings using sine and cosine functions:
+### `TokenEmbedding(nn.Module)`
+-   Wraps `nn.Embedding(vocab_size, d_model)`.
+-   Forward: `embedding(x) * sqrt(d_model)` (scaling prevents small values).
 
-$$ PE_{(pos, 2i)} = \sin(pos / 10000^{2i/d_{model}}) $$
-$$ PE_{(pos, 2i+1)} = \cos(pos / 10000^{2i/d_{model}}) $$
+### `PositionalEmbedding(nn.Module)`
+-   **Sinusoidal mode**: Registers a buffer (no gradients). Shape `(1, max_positions, d_model)`.
+-   **Learnable mode**: Uses `nn.Embedding(max_positions, d_model)`.
 
-### 3. `TokenEmbedding`
+### `TokenEmbeddingModule(LightningModule)`
+-   Combines `TokenEmbedding` + `PositionalEmbedding` + `Dropout`.
+-   Optionally masks padding positions.
 
-Wrapper around `nn.Embedding`.
--   **Forward**: `embedding(x) * sqrt(d_model)`
+## 5. Step-by-Step Logic (TokenEmbeddingModule.forward)
 
-### 4. `PositionalEmbedding`
+1.  **Token Embedding**: Look up each token ID in the embedding table → `(B, L, d_model)`.
+2.  **Scale**: Multiply by $\sqrt{d_{model}}$ to balance magnitude with positional encoding.
+3.  **Positional Encoding**: Add position-dependent vectors → each position gets a unique signature.
+4.  **Dropout**: Regularization.
+5.  **(Optional) Mask**: Zero out positions where `attention_mask == 0`.
 
-Supports two modes:
--   **Sinusoidal**: Uses fixed sine/cosine waves (not learnable).
--   **Learnable**: Uses `nn.Embedding(max_positions, d_model)`.
+## 6. Dry Run Trace
 
-### 5. `TokenEmbeddingModule`
+**Scenario**: `d_model=4`, `vocab_size=100`, sequence `[5, 12]`.
 
-Combined module used by Encoder and Decoder.
--   **Inputs**: `input_ids`
--   **Operations**:
-    1.  Get token embeddings.
-    2.  Add positional embeddings.
-    3.  Apply Dropout.
-    4.  (Optional) Apply attention mask masking (rarely used here, usually done in attention).
+| Step | Operation | Result (Shape) |
+|------|-----------|----------------|
+| 1 | Token Embed | `[[e5_0, e5_1, e5_2, e5_3], [e12_0, e12_1, e12_2, e12_3]]` → `(1, 2, 4)` |
+| 2 | Scale (×√4=×2) | Each value doubled |
+| 3 | Pos Embed (sinusoidal) | Pos 0: `[sin(0), cos(0), sin(0), cos(0)]` = `[0, 1, 0, 1]` |
+| | | Pos 1: `[sin(1/c), cos(1/c), sin(1/c²), cos(1/c²)]` where c=10000^(2/4) |
+| 4 | Add | Token embeddings + positional embeddings |
+| 5 | Dropout | Some values randomly zeroed (during training) |
+| **Output** | | `(1, 2, 4)` — Each token now has a position-aware representation |
 
-## Usage Example
+## 7. Code Example
 
 ```python
 import torch
 from Embedding import TokenEmbeddingModule, get_tokenizer, tokenize_batch
 
-# 1. Prepare Data
-tokenizer = get_tokenizer("gpt2")
-texts = ["Transformer embeddings are cool."]
-batch = tokenize_batch(tokenizer, texts, max_length=10)
-input_ids = batch["input_ids"]
+tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
+texts = ["Hello world"]
+batch = tokenize_batch(tokenizer, texts, max_length=8)
 
-# 2. Initialize Module
-embed_module = TokenEmbeddingModule(
+embed = TokenEmbeddingModule(
     vocab_size=len(tokenizer),
     d_model=256,
-    max_positions=10,
-    dropout=0.1,
+    max_positions=8,
     use_sinusoidal_pos=True
 )
 
-# 3. Forward
-embeddings = embed_module(input_ids)
-print("Embedding Shape:", embeddings.shape)
-# Expected: torch.Size([1, 10, 256])
+output = embed(batch["input_ids"], batch["attention_mask"])
+print("Shape:", output.shape)  # (1, 8, 256)
 ```

@@ -1,89 +1,111 @@
-# Encoder.py
+# Encoder.py Module Documentation
 
-## Overview
+## 1. Overview
 
-The `Encoder.py` module implements the **Transformer Encoder**, which processes input sequences into contextualized vector representations. It is capable of bidirectional attention (looking at both past and future tokens), making it suitable for understanding tasks (e.g., classification, translation source capability).
+The `Encoder` module implements the **Transformer Encoder**, which processes an input sequence into contextualized representations. Unlike the Decoder, the Encoder uses **bidirectional attention** — every token can attend to every other token, enabling full contextual understanding.
 
-## Architecture
+## 2. Modules Involved
 
-The Encoder consists of a stack of identical **Encoder Blocks**.
+-   **torch**, **torch.nn**: Core PyTorch.
+-   **pytorch_lightning**: LightningModule base class.
 
-### Encoder Block Logic
-1.  **Multi-Head Self-Attention**: Allows tokens to attend to all other tokens in the sequence (no causal masking).
-2.  **Add & Norm**: Residual connection followed by Layer Normalization.
-3.  **Position-wise Feed-Forward Network**: Processes each position independently.
-4.  **Add & Norm**: Residual connection followed by Layer Normalization.
+### Dependencies
+-   `Embedding.py` → `TokenEmbeddingModule`: For token + positional embeddings.
+-   `MultiHeadSelfAttention.py` → `MultiHeadSelfAttention`: With `causal=False`.
+-   `AddNorm.py` → `AddNorm`: Residual + Layer Norm.
+-   `FFN.py` → `PositionwiseFeedForward`: Position-wise feed-forward.
 
-### Mermaid Diagram
+### Used By
+-   `CrossAttentionSeq2SeqModel.py`: As the encoder half of the Seq2Seq model.
+-   `Decoder.py`: In the usage example (to provide encoder output).
+
+## 3. Architecture
 
 ```mermaid
 graph TD
-    Input[Input ID Sequence] --> Embed[Token + Positional Embedding]
+    Input[Source Token IDs \n (B, L)] --> Embed[Token + Positional Embedding]
     Embed --> Block1[Encoder Block 1]
-    Block1 --> Block2[Encoder Block 2]
-    Block2 --> Norm[Final Layer Norm]
-    Norm --> Output[Context Extensions]
     
-    subgraph "Encoder Block"
-        B_In[Input] --> MHSA[Multi-Head Self-Attention]
-        MHSA --> AddNorm1[Add & Norm]
-        AddNorm1 --> FFN[Feed-Forward Network]
-        FFN --> AddNorm2[Add & Norm]
-        AddNorm2 --> B_Out[Output]
+    subgraph "Encoder Block (x N)"
+        EI[Input] --> MHSA[Multi-Head Self-Attention \n causal=False, bidirectional]
+        MHSA --> AN1[Add & Norm]
+        AN1 --> FFN[Feed-Forward Network]
+        FFN --> AN2[Add & Norm]
     end
+    
+    Block1 --> BlockN[Encoder Block N]
+    BlockN --> Norm[Final Layer Norm]
+    Norm --> Output[Encoded Representations \n (B, L, d_model)]
 ```
 
-## Class Definitions
+## 4. Class Definitions
 
-### 1. `EncoderBlock`
+### `class EncoderBlock(LightningModule)`
 
-A single layer of the Encoder.
+-   **Sub-layers**:
+    1.  `self.mhsa`: `MultiHeadSelfAttention(causal=False)` — bidirectional.
+    2.  `self.addnorm1`: After self-attention.
+    3.  `self.ffn`: `PositionwiseFeedForward`.
+    4.  `self.addnorm2`: After FFN.
+-   **Forward**: Returns `(x, attn_weights)`.
 
--   **Components**:
-    -   `self.mhsa`: `MultiHeadSelfAttention` (causal=False).
-    -   `self.ffn`: `PositionwiseFeedForward`.
-    -   `self.addnorm1`, `self.addnorm2`.
+### `class Encoder(LightningModule)`
 
-### 2. `Encoder`
+-   **Components**: `TokenEmbeddingModule` → N × `EncoderBlock` → `LayerNorm`.
+-   **Forward**: Returns `(x, list_of_attn_maps)`.
 
-The complete PyTorch Lightning module.
+## 5. Step-by-Step Logic
 
--   **Parameters**:
-    -   `vocab_size`, `d_model`, `num_layers`, `num_heads`, `d_ff`, etc.
-    
--   **Forward Pass**:
-    1.  Embed inputs.
-    2.  Pass through `self.layers` (ModuleList of `EncoderBlock`).
-    3.  Normalize.
-    
--   **Returns**:
-    -   `x`: Encoded sequence `(Batch, Seq_Len, d_model)`.
-    -   `attn_maps`: List of attention weights.
+1.  **Embed**: `input_ids` → Token + Positional embeddings → `(B, L, d_model)`.
+2.  **For each EncoderBlock**:
+    -   **Self-Attention**:
+        -   Q, K, V all come from the same input `x`.
+        -   No causal mask → every token sees every other token.
+        -   Padding mask applied if provided.
+    -   **Add & Norm 1**: `x = LN(x + Dropout(attn_out))`.
+    -   **FFN**: `Linear(d_model → d_ff) → GELU → Linear(d_ff → d_model)`.
+    -   **Add & Norm 2**: `x = LN(x + Dropout(ffn_out))`.
+3.  **Final Norm**: `x = LayerNorm(x)`.
 
-## Usage Example
+## 6. Dry Run Trace
+
+**Scenario**: `Batch=1`, `Seq=3` (`[Hello, World, PAD]`), `d_model=4`, `num_heads=2`.
+
+| Step | Shape | Description |
+|------|-------|-------------|
+| Input | `(1, 3)` | Token IDs: `[15496, 2159, 50257]` |
+| Embed | `(1, 3, 4)` | Token embed + pos embed |
+| **Block 1** | | |
+| Self-Attn Q,K,V | `(1, 2, 3, 2)` | 2 heads, d_k=2 |
+| Attn Scores | `(1, 2, 3, 3)` | Full matrix (bidirectional) |
+| Padding Mask | `[[1,1,0]]` | PAD position masked to -inf |
+| Attn Output | `(1, 3, 4)` | Weighted values |
+| AddNorm1 | `(1, 3, 4)` | Residual + LN |
+| FFN | `(1, 3, 4)` | Through d_ff and back |
+| AddNorm2 | `(1, 3, 4)` | Residual + LN |
+| **Final Norm** | `(1, 3, 4)` | Output |
+
+**Key Observation**: Token at PAD position still gets a representation, but downstream modules will ignore it via masking.
+
+## 7. Code Example
 
 ```python
 import torch
 from Encoder import Encoder
 
-# 1. Config
-vocab_size = 5000
-d_model = 256
-
-# 2. Init
 encoder = Encoder(
-    vocab_size=vocab_size,
-    d_model=d_model,
+    vocab_size=50258,
+    d_model=256,
     num_layers=2,
-    num_heads=8
+    num_heads=8,
+    d_ff=1024
 )
 
-# 3. Dummy Input
-input_ids = torch.randint(0, vocab_size, (2, 10)) # (Batch, Seq)
-mask = torch.ones(2, 10) # Attention mask
+input_ids = torch.randint(0, 50258, (2, 10))
+mask = torch.ones(2, 10)
 
-# 4. Forward
-output, attn_maps = encoder(input_ids, attention_mask=mask)
-print("Encoder Output:", output.shape) 
-# Expected: torch.Size([2, 10, 256])
+output, attn_maps = encoder(input_ids, mask)
+print("Output:", output.shape)       # (2, 10, 256)
+print("Layers:", len(attn_maps))     # 2
+print("Attn:", attn_maps[0].shape)   # (2, 8, 10, 10)
 ```

@@ -1,132 +1,153 @@
-# DecoderMoE.py
+# DecoderMoE.py Module Documentation
 
-## Overview
+## 1. Overview
 
-The `DecoderMoE.py` module implements a **Decoder-Only Transformer** enhanced with **Mixture of Experts (MoE)** layers. This architecture replaces the standard dense Feed-Forward Network (FFN) with a sparse MoE layer, allowing the model to scale parameters significantly while maintaining efficient inference cost by only activating a subset of "experts" for each token.
+The `DecoderMoE` module implements a **Decoder-Only Transformer** equipped with **Mixture of Experts (MoE)** layers. Unlike a standard Transformer that uses a dense Feed-Forward Network (FFN) for every token, this model sparsely routes each token to a subset of "expert" networks. This allows for scaling up the generation of model parameters without a proportional increase in computational cost per inference.
 
-## Architecture
+### Key Concepts
+-   **Sparse Activation**: Only a fraction of the network is active for any given token.
+-   **Gating / Routing**: A learned mechanism decides which experts process which tokens.
+-   **Decoder-Only**: Similar to GPT, it uses masked self-attention and is suitable for generative tasks.
 
-### Mixture of Experts (MoE) Layer
+## 2. Modules Involved
 
-The core innovation is the `MoEFeedForward` layer, which consists of:
-1.  **Multiple Experts**: Independent MLPs (Feed-Forward Networks).
-2.  **Gating Network (Router)**: Routes each token to the top-$k$ most relevant experts.
-3.  **Weighted Sum**: Combines the outputs of the selected experts based on the routing probabilities.
+-   **torch**, **torch.nn**, **torch.nn.functional**: PyTorch core.
+-   **pytorch_lightning**: Training framework.
+-   **Metrics**: `sacrebleu`, `rouge_score`, `nltk`, `bert_score`.
 
-### Mermaid Diagram: MoE Routing
+### Dependencies
+-   `Embedding` (TokenEmbeddingModule)
+-   `MultiHeadSelfAttention` (MHSA)
+-   `AddNorm`
+-   **No Dependency on FFN**: This module defines its own replacement called `MoEFeedForward`.
+
+## 3. Architecture
+
+The architecture mimics a standard GPT Decoder, but replaces the `PositionwiseFeedForward` block with `MoEFeedForward`.
+
+### MoE Feed-Forward Layer Logic
+1.  **Router**: Projects input to $E$ logits (one per expert).
+2.  **Top-K Selection**: Selects the $K$ experts with the highest probabilities.
+3.  **Dispatch**: Tokens are sent to their selected experts.
+4.  **Expert Computation**: Each `ExpertMLP` processes its assigned tokens.
+5.  **Weighted Sum**: Outputs from experts are combined using the router probabilities.
+
+### Architecture Diagram
 
 ```mermaid
 graph TD
-    Input[Input Token Embedding] --> Router[Top-K Router]
-    Input --> Experts
+    Input[Input Tensor] --> Attention[Masked Self-Attention]
+    Attention --> AddNorm1[Add & Norm]
     
-    subgraph "Experts (Sparse Execution)"
-        E1[Expert 1]
-        E2[Expert 2]
-        E3[Expert 3]
-        E4[Expert 4]
-    end
+    AddNorm1 --> Router{Top-K Router}
     
-    Router -->|Probabilities| Weights[Routing H]
-    Router -->|Indices| Select[Select Top-K]
+    Router -- Token 1 --> Expert1[Expert 1]
+    Router -- Token 1 --> Expert3[Expert 3]
+    Router -- Token 2 --> Expert2[Expert 2]
+    Router -- Token 2 --> Expert4[Expert 4]
     
-    Select -->|Route Token| E1
-    Select -->|Route Token| E3
-    
-    E1 --> Sum[Weighted Sum]
-    E3 --> Sum
-    
-    Sum --> Output
+    Expert1 & Expert2 & Expert3 & Expert4 --> Combine[Weighted Sum]
+    Combine --> AddNorm2[Add & Norm]
+    AddNorm2 --> Output
 ```
 
-## Class Definitions
+## 4. Class Definitions
 
-### 1. `ExpertMLP`
+### `class ExpertMLP(nn.Module)`
+A standard feed-forward block: `Linear -> GELU -> Dropout -> Linear -> Dropout`.
+-   Acts as a single "brain" in the MoE layer.
 
-A standard Feed-Forward Network acting as a single expert.
--   **Structure**: `Linear` -> `GELU` -> `Dropout` -> `Linear` -> `Dropout`.
+### `class TopKRouter(nn.Module)`
+Decides which experts to use.
+-   **Forward**: returns `probs` (all), `topk_probs` (sum-normalized), and `topk_indices`.
 
-### 2. `TopKRouter`
+### `class MoEFeedForward(nn.Module)`
+The core MoE layer.
+-   **Parameters**: `num_experts` (Total available), `top_k` (Active per token).
+-   **Logic**: 
+    -   Routes inputs.
+    -   Performs sparse computation (using loops and masking to only compute active paths).
+    -   Recombines outputs.
 
-Determines which experts handle which tokens.
--   **Input**: Token embeddings `(B, L, d_model)`.
--   **Output**: 
-    -   `probs`: Full probability distribution over experts.
-    -   `topk_probs`: Probabilities of selected experts (normalized).
-    -   `topk_indices`: Indices of selected experts.
+### `class DecoderBlockMoE(nn.Module)`
+A Decoder block using `MoEFeedForward`.
+-   Structure: `AddNorm(x, MHSA(x))` -> `AddNorm(x, MoE(x))`.
 
-### 3. `MoEFeedForward`
+### `class DecoderOnlyMoEModel(pl.LightningModule)`
+The full functioning model containing the stack of `DecoderBlockMoE`.
 
-Orchestrates the sparse computation.
--   **Logic**:
-    1.  **Routing**: Get top-$k$ experts for each token.
-    2.  **Scatter**: Organize inputs for efficient processing.
-    3.  **Expert Compute**: Process tokens only with their assigned experts.
-    4.  **Gather & Weight**: Combine expert outputs using the gating probabilities.
+## 5. Step-by-Step Logic (MoE Layer)
 
-### 4. `DecoderBlockMoE`
+1.  **Routing**: 
+    -   Input `x` `(Batch, Seq, Dim)`.
+    -   Router produces logits `(Batch, Seq, Num_Experts)`.
+    -   Softmax -> `probs`.
+    -   Top-K -> `topk_indices` and `topk_probs`.
 
-A Transformer block where the standard FFN is replaced by `MoEFeedForward`.
--   **Layers**:
-    1.  Masked Multi-Head Self-Attention + AddNorm.
-    2.  MoE Feed-Forward + AddNorm.
+2.  **Scatter Setup**:
+    -   Flatten batch and sequence: `N = B * L`.
+    -   Create a sparse probability matrix `topk_probs_full` `(N, Num_Experts)`.
 
-### 5. `DecoderOnlyMoEModel`
+3.  **Expert Execution Loop**:
+    -   For each expert $e$ from $0$ to $E-1$:
+        -   Find indices in the batch where Expert $e$ was selected.
+        -   Gather those specific tokens.
+        -   Run `ExpertMLP[e]`.
+        -   Scatter results back to a temporary buffer.
+    -   Stack results: `(N, Dim, Num_Experts)`.
+    *Note: This implementation uses a Python loop, which is simple but maybe slower than optimized CUDA kernels.*
 
-The complete PyTorch Lightning module.
--   **Embedding**: Token + Positional.
--   **Layers**: Stack of `DecoderBlockMoE`.
--   **Head**: Final LayerNorm + Linear Classifier.
--   **Loss**: Cross Entropy.
--   **Metrics**: BLEU, ROUGE, METEOR, BERTScore.
+4.  **Combination**:
+    -   Multiply stacked outputs by `topk_probs_full`.
+    -   Sum over the expert dimension.
+    -   Reshape back to `(Batch, Seq, Dim)`.
 
-## Key Logic: Top-K Routing
+## 6. Dry Run Trace
 
-The routing mechanism ensures sparsity:
+**Scenario**:
+-   `Batch`=1, `Seq`=2. Input `x` `[T1, T2]`.
+-   `Experts`=3 (`E0`, `E1`, `E2`), `TopK`=2.
+-   `d_model`=4.
 
-```python
-# 1. Compute logits for all experts
-logits = self.linear(x)
+**Trace**:
 
-# 2. Get probabilities
-probs = F.softmax(logits, dim=-1)
+1.  **Input**: `x` shape `(1, 2, 4)`.
+2.  **Router**:
+    -   Logits for T1: `[10, 5, 0]` -> Probs `[High, Med, Low]`. Top-2: `E0, E1`.
+    -   Logits for T2: `[0, 10, 5]` -> Probs `[Low, High, Med]`. Top-2: `E1, E2`.
+3.  **Execution**:
+    -   **Loop E0**: Selected by T1. Process T1. Output `O_T1_E0`.
+    -   **Loop E1**: Selected by T1 AND T2. Process T1, T2. Output `O_T1_E1`, `O_T2_E1`.
+    -   **Loop E2**: Selected by T2. Process T2. Output `O_T2_E2`.
+4.  **Stacking**:
+    -   T1 Vector: `[O_T1_E0, O_T1_E1, 0]` (E2 was not selected).
+    -   T2 Vector: `[0, O_T2_E1, O_T2_E2]` (E0 was not selected).
+5.  **Weighted Sum**:
+    -   T1 Final = $P_{T1,E0} \cdot O_{T1,E0} + P_{T1,E1} \cdot O_{T1,E1}$.
+    -   T2 Final = $P_{T2,E1} \cdot O_{T2,E1} + P_{T2,E2} \cdot O_{T2,E2}$.
+6.  **Output**: Shape `(1, 2, 4)`.
 
-# 3. Select Top-K
-topk_probs, topk_indices = torch.topk(probs, k=self.top_k, dim=-1)
-
-# 4. Normalize Top-K probabilities
-topk_probs = topk_probs / topk_probs.sum(dim=-1, keepdim=True)
-```
-
-## Example Usage
+## 7. Configuration Example
 
 ```python
 import torch
 from DecoderMoE import DecoderOnlyMoEModel
 
-# 1. Configuration
-vocab_size = 1000
-d_model = 256
-num_experts = 4
-top_k = 2
-
-# 2. Initialize Model
+# Config
 model = DecoderOnlyMoEModel(
-    vocab_size=vocab_size,
-    tokenizer=None, # Pass actual tokenizer for validation
-    d_model=d_model,
+    vocab_size=100,
+    d_model=16,
     num_layers=2,
     num_heads=4,
-    num_experts=num_experts,
-    top_k=top_k
+    num_experts=4,
+    top_k=2
 )
 
-# 3. Dummy Input
-input_ids = torch.randint(0, vocab_size, (2, 10)) # (Batch, Seq)
+# Input
+input_ids = torch.randint(0, 100, (1, 10))
 
-# 4. Forward Pass
+# Forward
 logits, attn_maps = model(input_ids)
-
-print("Logits shape:", logits.shape) 
-# Expected: torch.Size([2, 10, vocab_size])
+print("Logits Shape:", logits.shape) 
+# Expected: torch.Size([1, 10, 100])
 ```

@@ -1,51 +1,77 @@
-# DecoderOnlyInference.py
+# DecoderOnlyInference.py Module Documentation
 
-## Overview
+## 1. Overview
 
-The `DecoderOnlyInference.py` script performs **inference** using a trained **Decoder-Only Transformer** (GPT-style). It loads a saved checkpoint and generates text continuations from a given prompt using greedy decoding.
+This script performs **text generation** using a trained standard `DecoderOnlyModel` (non-MoE). It mirrors `DecoderMoEInference.py` in structure but loads a different model class.
 
-## Components
+## 2. Modules Involved
 
-### 1. `greedy_decode`
+-   **os, glob**: Filesystem utilities.
+-   **torch**: Core PyTorch library.
 
-Performs token-by-token generation.
+### Dependencies
+-   `DecoderOnlySeq2SeqModel.py` → `DecoderOnlyModel`: The standard decoder-only model.
+-   `Embedding.py` → `get_tokenizer`: Tokenizer provider.
 
--   **Process:**
-    1.  Encodes the prompt.
-    2.  Prepends `[BOS]` token.
-    3.  Feeds the sequence to the `DecoderOnlyModel`.
-    4.  Selects the token with the highest probability (greedy approach).
-    5.  Appends the new token and repeats until `max_len` or `[EOS]` token is reached.
-    6.  Decodes the resulting token IDs back to a string.
-
-### Mermaid Diagram: Inference Flow
+## 3. Architecture
 
 ```mermaid
-graph LR
-    Prompt[Text Prompt] --> Tokenizer
-    Tokenizer --> IDs[Input IDs]
-    IDs --> Model[DecoderOnlyModel]
-    Model --> Logits
-    Logits --> ArgMax[Target Token]
-    ArgMax --> Loop{EOS / MaxLen?}
-    Loop -- No --> Model
-    Loop -- Yes --> Decode[Decode to Text]
-    Decode --> Output
+graph TD
+    Prompt[User Prompt] --> Tokenize[Tokenize + Prepend BOS]
+    Tokenize --> Loop
+
+    subgraph "Greedy Decoding Loop"
+        Loop[Current Sequence] --> Model[DecoderOnlyModel]
+        Model --> Logits[Last Position Logits]
+        Logits --> ArgMax[ArgMax]
+        ArgMax --> Append[Append Token]
+        Append --> Check{EOS?}
+        Check -- No --> Loop
+    end
+    
+    Check -- Yes --> Decode[Decode to String]
+    Decode --> Output[Generated Text]
 ```
 
-### 2. `load_latest_checkpoint`
+## 4. Functions
 
--   Automatically locates the latest `.ckpt` file in the `DecoderOnlyCheckpoints` directory based on file modification timestamps.
--   Initializes the `DecoderOnlyModel` with the loaded state dict.
+### `greedy_decode(model, tokenizer, prompt, max_len, device, bos_token_id, eos_token_id)`
 
-## Usage
+Identical logic to `DecoderMoEInference.greedy_decode`, but operates on `DecoderOnlyModel`.
 
-Run the script directly:
+### `load_latest_checkpoint(checkpoint_dir, vocab_size, tokenizer)`
+
+Loads the latest `.ckpt` file from `DecoderOnlyCheckpoints/`.
+
+## 5. Step-by-Step Logic
+
+1.  **Set eval mode**: Disables dropout and batch norm training behavior.
+2.  **Tokenize prompt**: Convert text to token IDs.
+3.  **Prepend BOS**: Add beginning-of-sequence token.
+4.  **Loop**:
+    -   Forward pass through entire sequence.
+    -   Extract logits at the last position.
+    -   Select token with highest probability (`argmax`).
+    -   Append to the sequence.
+    -   Check for EOS → stop condition.
+5.  **Decode**: Convert final token ID sequence to human-readable text.
+
+## 6. Dry Run Trace
+
+**Prompt**: `"The future of"`
+
+| Step | Sequence | Next Token | Notes |
+|------|----------|------------|-------|
+| Init | `[BOS, 464, 2003, 286]` | — | Tokenized prompt |
+| Iter 1 | `[BOS, 464, 2003, 286]` | 9552 | "technology" |
+| Iter 2 | `[BOS, 464, 2003, 286, 9552]` | 318 | "is" |
+| Iter 3 | `[BOS, 464, 2003, 286, 9552, 318]` | EOS | **STOP** |
+| Output | — | — | `"The future of technology is"` |
+
+## 7. Usage
 
 ```bash
 python DecoderOnlyInference.py
 ```
 
-It defaults to:
--   Loading the latest checkpoint from `DecoderOnlyCheckpoints/`.
--   Generating text for the prompt *"Artificial intelligence is transforming"*.
+Requires a trained checkpoint in `DecoderOnlyCheckpoints/`.

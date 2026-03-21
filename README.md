@@ -17,16 +17,16 @@
 
 ## ✨ What Makes This Special
 
-🎯 **Complete Implementation** - Every component from the original paper, meticulously crafted  
-⚡ **Lightning Fast** - PyTorch Lightning integration for distributed training  
-🧠 **Production Ready** - Proper error handling, logging, and checkpointing  
-🔧 **Modular Design** - Each component is independently testable and reusable  
-🧪 **Independent Testing** - Run each module separately for debugging and learning  
-📚 **Educational** - Clean, well-documented code perfect for learning  
-🎨 **Modern Stack** - Uses GPT-2 tokenizer and state-of-the-art practices  
-🚀 **Multiple Architectures** - CrossAttention, DecoderOnly, and MoE implementations  
-📊 **Comprehensive Metrics** - BLEU, ROUGE, METEOR, and BERTScore evaluation  
-🎛️ **Advanced Features** - Mixture of Experts with Top-K routing and sparse computation  
+🎯 **Complete Implementation** - Every component from the original paper, meticulously crafted
+⚡ **Lightning Fast** - PyTorch Lightning integration for distributed training
+🧠 **Production Ready** - Proper error handling, logging, and checkpointing
+🔧 **Modular Design** - Each component is independently testable and reusable
+🧪 **Independent Testing** - Run each module separately for debugging and learning
+📚 **Educational** - Clean, well-documented code perfect for learning
+🎨 **Modern Stack** - Uses GPT-2 tokenizer and state-of-the-art practices
+🚀 **Multiple Architectures** - CrossAttention, DecoderOnly, MoE, GQA, MQA, and MLA
+📊 **Comprehensive Metrics** - BLEU, ROUGE, METEOR, and BERTScore evaluation
+🎛️ **Advanced Features** - Mixture of Experts, Group Query Attention, Multi-Query Attention, Multi-Head Latent Attention
 
 ---
 
@@ -34,25 +34,36 @@
 
 ### Core Components
 
-| Component | Description | Key Features |
-|-----------|-------------|--------------|
-| **🔤 TokenEmbedding** | Converts tokens to dense vectors | Scaling, padding handling, vocabulary mapping |
-| **📍 PositionalEmbedding** | Adds position information | Sinusoidal & learned encodings, flexible max positions |
-| **🎯 MultiHeadSelfAttention** | The heart of Transformers | Causal masking, cross-attention, scaled dot-product |
-| **🧠 PositionwiseFeedForward** | Non-linear transformations | GELU activation, configurable dimensions |
-| **➕ AddNorm** | Residual connections + normalization | Layer normalization, dropout, gradient flow |
-| **📥 Encoder** | Processes input sequences | Stacked layers, self-attention, context building |
-| **📤 Decoder** | Generates output sequences | Masked attention, cross-attention, autoregressive |
-| **🎛️ MoE Components** | Mixture of Experts implementation | Top-K routing, sparse computation, expert specialization |
-| **🔀 TopKRouter** | Expert selection mechanism | Dynamic routing, load balancing, efficient computation |
+| Component | Location | Description | Key Features |
+|-----------|----------|-------------|--------------|
+| **🔤 TokenEmbedding** | `core/Embedding.py` | Converts tokens to dense vectors | Scaling, padding handling, vocabulary mapping |
+| **📍 PositionalEmbedding** | `core/Embedding.py` | Adds position information | Sinusoidal & learned encodings, flexible max positions |
+| **🎯 MultiHeadSelfAttention** | `core/attention/MultiHeadSelfAttention.py` | Standard multi-head attention | Causal masking, cross-attention, scaled dot-product |
+| **🔀 GroupQueryAttention** | `core/attention/GroupQueryAttention.py` | GQA — grouped KV heads | Tunable KV sharing, reduced KV cache |
+| **⚡ MultiQueryAttention** | `core/attention/MultiQueryAttention.py` | MQA — single shared KV head | Maximum KV cache reduction |
+| **🧬 MultiHeadLatentAttention** | `core/attention/MultiHeadLatentAttention.py` | MLA — compressed latent KV | Low-rank KV compression (DeepSeek-V2) |
+| **🧠 PositionwiseFeedForward** | `core/FFN.py` | Non-linear transformations | GELU activation, configurable dimensions |
+| **➕ AddNorm** | `core/AddNorm.py` | Residual connections + normalization | Layer normalization, dropout, gradient flow |
 
 ### Model Architectures
 
-| Architecture | Description | Use Cases | Key Features |
-|--------------|-------------|-----------|--------------|
-| **🔄 CrossAttentionSeq2Seq** | Full encoder-decoder with cross-attention | Translation, summarization | Bidirectional encoding, cross-attention |
-| **📝 DecoderOnly** | GPT-style autoregressive model | Text generation, completion | Causal masking, next-token prediction |
-| **🎛️ DecoderOnlyMoE** | Decoder-only with Mixture of Experts | Large-scale text generation | Sparse activation, expert routing |
+| Architecture | Location | Attention | Key Features |
+|--------------|----------|-----------|--------------|
+| **🔄 CrossAttentionSeq2Seq** | `models/CrossAttentionSeq2SeqModel.py` | MHA | Full encoder-decoder, cross-attention |
+| **📝 DecoderOnly** | `models/DecoderOnlySeq2SeqModel.py` | MHA | GPT-style, causal masking |
+| **🎛️ DecoderOnlyMoE** | `models/DecoderMoE.py` | MHA | Sparse MoE routing, expert specialization |
+| **🔀 DecoderOnlyGQA** | `models/DecoderOnlyGQAModel.py` | GQA | Grouped KV heads (LLaMA 2, Mistral) |
+| **⚡ DecoderOnlyMQA** | `models/DecoderOnlyMQAModel.py` | MQA | Single KV head, fastest inference |
+| **🧬 DecoderOnlyMLA** | `models/DecoderOnlyMLAModel.py` | MLA | Compressed KV cache (DeepSeek-V2) |
+
+### Attention Mechanism Comparison
+
+| Mechanism | KV Heads | KV Cache Size | Params (d=256, h=8) | Used In |
+|-----------|----------|---------------|---------------------|---------|
+| **MHA** | `num_heads` (8) | 100% | 263K | GPT, BERT, T5 |
+| **GQA** | `num_kv_heads` (2) | 25% | 164K | LLaMA 2 70B, Mistral |
+| **MQA** | 1 | 12.5% | 148K | PaLM, Falcon |
+| **MLA** | Compressed | `d_compress/d_model` | 149K | DeepSeek-V2 |
 
 ### Data Flow
 
@@ -80,29 +91,38 @@ git clone https://github.com/yourusername/transformer-from-scratch.git
 cd transformer-from-scratch
 
 # Install dependencies
-pip install torch pytorch-lightning transformers pandas numpy sacrebleu rouge_score bert_score nltk
+pip install -r requirements.txt
 ```
 
 ### 2. Training
 
-Choose from multiple model architectures:
+All training scripts are in `TrainerScripts/`. Run from the **project root**:
 
 #### CrossAttention Seq2Seq Model
 ```bash
-# Train encoder-decoder with cross-attention
-python Trainer.py
+python TrainerScripts/Trainer.py
 ```
 
 #### Decoder-Only Model (GPT-style)
 ```bash
-# Train decoder-only autoregressive model
-python DecoderOnlyTrainer.py
+python TrainerScripts/DecoderOnlyTrainer.py
 ```
 
 #### Decoder-Only with Mixture of Experts
 ```bash
-# Train MoE model with expert routing
-python DecoderMoETrainer.py
+python TrainerScripts/DecoderMoETrainer.py
+```
+
+#### Decoder-Only with GQA / MQA / MLA
+```bash
+python TrainerScripts/DecoderOnlyGQATrainer.py
+python TrainerScripts/DecoderOnlyMQATrainer.py
+python TrainerScripts/DecoderOnlyMLATrainer.py
+```
+
+#### GSM8K Math Reasoning
+```bash
+python TrainerScripts/GSM8KTrainer.py
 ```
 
 **Training Features:**
@@ -110,29 +130,31 @@ python DecoderMoETrainer.py
 - 📊 **Real-time monitoring** - Loss tracking and validation metrics
 - 🔄 **GPU acceleration** - GPU support
 - 📈 **Progress tracking** - Detailed logging and progress bars
-- 🎛️ **MoE Support** - Sparse computation with expert routing
 - 📊 **Comprehensive Metrics** - BLEU, ROUGE, METEOR, BERTScore evaluation
 
 ### 3. Inference
 
-Choose the appropriate inference script for your model:
-
 #### CrossAttention Seq2Seq Model
 ```bash
-# Generate text completions with encoder-decoder
-python Inference.py
+python TrainerScripts/Inference.py
 ```
 
 #### Decoder-Only Model
 ```bash
-# Generate text with decoder-only model
-python DecoderOnlyInference.py
+python TrainerScripts/DecoderOnlyInference.py
 ```
 
-#### Decoder-Only with MoE
+#### Decoder-Only with MoE / GQA / MQA / MLA
 ```bash
-# Generate text with MoE model
-python DecoderMoEInference.py
+python TrainerScripts/DecoderMoEInference.py
+python TrainerScripts/DecoderOnlyGQAInference.py
+python TrainerScripts/DecoderOnlyMQAInference.py
+python TrainerScripts/DecoderOnlyMLAInference.py
+```
+
+#### GSM8K Math Reasoning
+```bash
+python TrainerScripts/GSM8KInference.py
 ```
 
 **Inference Features:**
@@ -140,29 +162,25 @@ python DecoderMoEInference.py
 - ⚡ **Fast inference** - Optimized for production use
 - 🎯 **Flexible input** - Handle variable length sequences
 - 🔧 **Easy integration** - Simple API for your applications
-- 🎛️ **MoE Support** - Efficient expert routing during inference
-- 📊 **Multiple Models** - Support for different architectures
 
 ### 4. Independent Module Testing
 
-Each component can be run independently for testing and experimentation:
+Each core component can be run independently for testing and experimentation:
 
 ```bash
 # Test individual components
-python Embedding.py              # Test token & positional embeddings
-python MultiHeadSelfAttention.py # Test attention mechanism
-python FFN.py                    # Test feed-forward network
-python AddNorm.py                # Test residual connections & normalization
-python Encoder.py                # Test encoder stack
-python Decoder.py                # Test decoder stack
-python Seq2SeqModel.py           # Test complete model
-```
+python core/Embedding.py                              # Token & positional embeddings
+python core/attention/MultiHeadSelfAttention.py       # Standard multi-head attention
+python core/attention/GroupQueryAttention.py           # Group Query Attention
+python core/attention/MultiQueryAttention.py          # Multi-Query Attention
+python core/attention/MultiHeadLatentAttention.py     # Multi-Head Latent Attention
+python core/FFN.py                                    # Feed-forward network
+python core/AddNorm.py                                # Residual connections & normalization
 
-**Independent Testing Features:**
-- 🧪 **Component isolation** - Test each part separately
-- 🔍 **Debugging friendly** - Easy to identify issues in specific components
-- 📚 **Learning focused** - Understand each component's behavior individually
-- ⚡ **Quick validation** - Fast testing without full training pipeline
+# Test model architectures
+python models/Encoder.py                              # Encoder stack
+python models/Decoder.py                              # Decoder stack
+```
 
 ---
 
@@ -181,17 +199,7 @@ The codebase includes comprehensive evaluation metrics for assessing model perfo
 | **☄️ METEOR** | Semantic similarity with synonyms | 0-1 | Meaning preservation |
 | **🧠 BERTScore** | Contextual embedding similarity | 0-1 | Semantic understanding |
 
-### Implementation Features
-
-- **📊 Real-time Tracking** - Metrics computed during validation
-- **📈 Progress Monitoring** - All metrics logged to PyTorch Lightning
-- **🔄 Automatic Evaluation** - No manual intervention required
-- **⚡ Efficient Computation** - Optimized for large-scale evaluation
-- **📋 Comprehensive Coverage** - Multiple evaluation perspectives
-
-### Usage
-
-All metrics are automatically computed during training validation steps and logged to the progress bar and tensorboard logs.
+All metrics are automatically computed during training validation steps and logged to the progress bar and TensorBoard logs.
 
 ---
 
@@ -204,17 +212,10 @@ All metrics are automatically computed during training validation steps and logg
 - 🔄 **Train/Val Split**: 80/20 automatic split
 - 🌍 **Diverse Topics**: Covers multiple domains and contexts
 
-**Example:**
-```
-Input:  "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies"
-Output: "reducing dependence on fossil fuels and lowering emissions."
-```
-
-**Dataset Features:**
-- 📚 **Educational Content** - Science, technology, and general knowledge
-- 🔄 **Multiple Formats** - Various sentence structures and completion types
-- 🎯 **Quality Controlled** - Curated for meaningful learning objectives
-- 📊 **Balanced Distribution** - Even representation across different topics
+**GSM8K Math Reasoning**
+- 🧮 **7,473 training** + **1,319 test** grade school math problems
+- 🎯 **Task**: Solve multi-step arithmetic word problems
+- 📏 **Format**: `"Question: ..." → "Answer: step-by-step solution"`
 
 ---
 
@@ -233,13 +234,14 @@ Output: "reducing dependence on fossil fuels and lowering emissions."
 | `max_positions` | 32-512 | Maximum sequence length |
 | `use_sinusoidal_pos` | True | Use sinusoidal positional encoding |
 
-### MoE Configuration (DecoderOnlyMoE)
+### Attention Variant Configuration
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `num_experts` | 4 | Number of expert networks |
-| `top_k` | 2 | Number of experts to activate per token |
-| `expert_capacity` | Auto | Maximum tokens per expert |
+| Parameter | Applies To | Default | Description |
+|-----------|-----------|---------|-------------|
+| `num_kv_heads` | GQA | 2 | Number of key/value heads |
+| `d_compress` | MLA | 64 | Latent compression dimension |
+| `num_experts` | MoE | 4 | Number of expert networks |
+| `top_k` | MoE | 2 | Experts to activate per token |
 
 ### Training Configuration
 
@@ -257,34 +259,67 @@ Output: "reducing dependence on fossil fuels and lowering emissions."
 
 ```
 transformer-from-scratch/
-├── 🧠 Core Components
-│   ├── Embedding.py              # Token & positional embeddings
-│   ├── MultiHeadSelfAttention.py # Multi-head attention mechanism
-│   ├── FFN.py                    # Position-wise feed-forward
-│   └── AddNorm.py                # Residual connections + normalization
-├── 🏗️ Architecture Models
-│   ├── Encoder.py                # Encoder stack implementation
-│   ├── Decoder.py                # Decoder stack implementation
-│   ├── CrossAttentionSeq2SeqModel.py  # Full encoder-decoder model
-│   ├── DecoderOnlySeq2SeqModel.py     # GPT-style decoder-only model
-│   └── DecoderMoE.py             # Decoder-only with Mixture of Experts
-├── 🚀 Training Scripts
-│   ├── Trainer.py                # CrossAttention training pipeline
-│   ├── DecoderOnlyTrainer.py     # Decoder-only training pipeline
-│   └── DecoderMoETrainer.py      # MoE training pipeline
-├── 🎯 Inference Scripts
-│   ├── Inference.py              # CrossAttention inference
-│   ├── DecoderOnlyInference.py   # Decoder-only inference
-│   └── DecoderMoEInference.py    # MoE inference
-├── 📊 Data
-│   ├── versatile_dataset_2000.csv     # Main training dataset
-│   └── synthetic_text_completion.csv  # Legacy dataset
-├── 📁 Checkpoints
-│   ├── Seq2SeqCheckpoints/       # CrossAttention model checkpoints
-│   ├── DecoderOnlyCheckpoints/   # Decoder-only model checkpoints
-│   └── DecoderMoECheckpoints/    # MoE model checkpoints
-└── 📈 Logs
-    └── lightning_logs/           # Training logs and metrics
+├── core/                                    # 🧠 Reusable Building Blocks
+│   ├── Embedding.py                         #   Token & positional embeddings
+│   ├── AddNorm.py                           #   Residual connections + normalization
+│   ├── FFN.py                               #   Position-wise feed-forward network
+│   └── attention/                           #   Attention Mechanisms
+│       ├── MultiHeadSelfAttention.py        #     Standard multi-head attention (MHA)
+│       ├── GroupQueryAttention.py            #     Group Query Attention (GQA)
+│       ├── MultiQueryAttention.py           #     Multi-Query Attention (MQA)
+│       └── MultiHeadLatentAttention.py      #     Multi-Head Latent Attention (MLA)
+│
+├── models/                                  # 🏗️ Complete Model Architectures
+│   ├── Encoder.py                           #   Encoder stack
+│   ├── Decoder.py                           #   Decoder stack (with cross-attention)
+│   ├── CrossAttentionSeq2SeqModel.py        #   Full encoder-decoder Seq2Seq
+│   ├── DecoderOnlySeq2SeqModel.py           #   GPT-style decoder-only (MHA)
+│   ├── DecoderMoE.py                        #   Decoder-only with Mixture of Experts
+│   ├── DecoderOnlyGQAModel.py               #   Decoder-only with GQA
+│   ├── DecoderOnlyMQAModel.py               #   Decoder-only with MQA
+│   └── DecoderOnlyMLAModel.py               #   Decoder-only with MLA
+│
+├── TrainerScripts/                          # 🚀 Training & Inference Scripts
+│   ├── Trainer.py                           #   CrossAttention Seq2Seq training
+│   ├── Inference.py                         #   CrossAttention Seq2Seq inference
+│   ├── DecoderOnlyTrainer.py                #   Decoder-only training
+│   ├── DecoderOnlyInference.py              #   Decoder-only inference
+│   ├── DecoderMoETrainer.py                 #   MoE training
+│   ├── DecoderMoEInference.py               #   MoE inference
+│   ├── DecoderOnlyGQATrainer.py             #   GQA training
+│   ├── DecoderOnlyGQAInference.py           #   GQA inference
+│   ├── DecoderOnlyMQATrainer.py             #   MQA training
+│   ├── DecoderOnlyMQAInference.py           #   MQA inference
+│   ├── DecoderOnlyMLATrainer.py             #   MLA training
+│   ├── DecoderOnlyMLAInference.py           #   MLA inference
+│   ├── GSM8KTrainer.py                      #   GSM8K math reasoning training
+│   └── GSM8KInference.py                    #   GSM8K math reasoning inference
+│
+├── data/                                    # 📊 Datasets
+│   ├── versatile_dataset_2000.csv           #   Main text completion dataset
+│   └── synthetic_text_completion.csv        #   Legacy dataset
+│
+├── checkpoints/                             # 💾 Model Checkpoints
+│   ├── Seq2SeqCheckpoints/                  #   CrossAttention model
+│   ├── DecoderOnlyCheckpoints/              #   Decoder-only model
+│   ├── DecoderMoECheckpoints/               #   MoE model
+│   ├── GQACheckpoints/                      #   GQA model
+│   ├── MQACheckpoints/                      #   MQA model
+│   ├── MLACheckpoints/                      #   MLA model
+│   └── GSM8KCheckpoints/                    #   GSM8K model
+│
+├── docs/                                    # 📚 Documentation (38 files)
+│   ├── Embedding.md, AddNorm.md, FFN.md     #   Core component docs
+│   ├── MultiHeadSelfAttention.md            #   Attention mechanism docs
+│   ├── GroupQueryAttention.md               #   GQA docs
+│   ├── MultiQueryAttention.md               #   MQA docs
+│   ├── MultiHeadLatentAttention.md          #   MLA docs
+│   ├── DecoderOnlySeq2SeqModel.md           #   Model architecture docs
+│   ├── DecoderOnly{GQA,MQA,MLA}Model.md    #   Variant model docs
+│   └── ...                                  #   Trainer & inference docs
+│
+├── README.md
+└── requirements.txt
 ```
 
 ---
@@ -292,8 +327,8 @@ transformer-from-scratch/
 ## 🎯 Use Cases
 
 ### Perfect For:
-- 📚 **Learning** - Understanding Transformer architecture
-- 🔬 **Research** - Experimenting with attention mechanisms
+- 📚 **Learning** - Understanding Transformer architecture and its variants
+- 🔬 **Research** - Experimenting with attention mechanisms (MHA, GQA, MQA, MLA)
 - 🚀 **Prototyping** - Quick seq2seq model development
 - 🧪 **Component Testing** - Debug and validate individual modules
 
@@ -303,19 +338,12 @@ transformer-from-scratch/
 - 📄 **Summarization** - Generate concise summaries
 - 🔄 **Translation** - Sequence-to-sequence translation
 - 📝 **Question Answering** - Context-aware responses
-- 📊 **Data-to-Text** - Convert structured data to natural language
 
-#### Decoder-Only Models
+#### Decoder-Only Models (MHA / GQA / MQA / MLA / MoE)
 - 📝 **Text Completion** - Auto-complete sentences
 - 💬 **Chatbots** - Conversational AI systems
 - 🎨 **Creative Writing** - Story and content generation
-- 🔍 **Code Generation** - Programming assistance
-
-#### MoE Models
-- 🚀 **Large-Scale Generation** - Efficient text generation at scale
-- 🎯 **Specialized Tasks** - Expert routing for domain-specific content
-- ⚡ **Resource Optimization** - Sparse computation for better efficiency
-- 🧠 **Multi-Domain Learning** - Handle diverse topics with specialized experts
+- 🧮 **Math Reasoning** - GSM8K grade school math problems
 
 ---
 
@@ -323,40 +351,25 @@ transformer-from-scratch/
 
 ### Key Features
 
-The MoE implementation includes several advanced features for efficient sparse computation:
-
-#### Expert Architecture
 - **🔧 ExpertMLP** - Individual expert networks with GELU activation
 - **🎯 TopKRouter** - Intelligent routing mechanism for expert selection
 - **⚡ Sparse Computation** - Only activate selected experts per token
 - **📊 Load Balancing** - Automatic expert capacity management
 
-#### Routing Strategy
-- **🎲 Softmax Gating** - Probabilistic expert selection
-- **🔝 Top-K Selection** - Activate only the most relevant experts
-- **📈 Dynamic Routing** - Adaptive expert selection based on input
-- **⚖️ Load Balancing** - Prevent expert overloading
-
-#### Performance Optimizations
-- **🚀 Sparse Activation** - Reduce computational overhead
-- **💾 Memory Efficient** - Only store active expert outputs
-- **🔄 Batch Processing** - Efficient parallel expert computation
-- **📊 Gradient Flow** - Proper backpropagation through routing
-
 ### Usage Example
 
 ```python
-# Initialize MoE model
+from models.DecoderMoE import DecoderOnlyMoEModel
+
 model = DecoderOnlyMoEModel(
     vocab_size=vocab_size,
     d_model=256,
     num_experts=4,      # Number of expert networks
-    top_k=2,           # Activate top 2 experts per token
+    top_k=2,            # Activate top 2 experts per token
     num_layers=6,
     tokenizer=tokenizer
 )
 
-# Training automatically handles expert routing
 trainer.fit(model, train_loader, val_loader)
 ```
 
@@ -385,7 +398,9 @@ We welcome contributions! Here's how you can help:
 
 ### Papers
 1. **Vaswani, A., et al.** (2017). "Attention is all you need." *NeurIPS 2017*
-2. **Devlin, J., et al.** (2018). "BERT: Pre-training of Deep Bidirectional Transformers." *NAACL 2019*
+2. **Shazeer, N.** (2019). "Fast Transformer Decoding: One Write-Head is All You Need." *arXiv*
+3. **Ainslie, J., et al.** (2023). "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints." *EMNLP 2023*
+4. **DeepSeek-AI** (2024). "DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model." *arXiv*
 
 ### Resources
 - 📖 [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/)

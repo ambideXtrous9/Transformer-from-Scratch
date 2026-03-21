@@ -1,16 +1,16 @@
-import os
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 import glob
 import torch
 from typing import Optional
-from DecoderOnlyGQAModel import DecoderOnlyGQAModel
-from Embedding import get_tokenizer, tokenize_batch
+from models.DecoderOnlyMQAModel import DecoderOnlyMQAModel
+from core.Embedding import get_tokenizer, tokenize_batch
 
 
 def greedy_decode(
-    model: DecoderOnlyGQAModel,
+    model: DecoderOnlyMQAModel,
     tokenizer,
     prompt: str,
     max_len: int = 50,
@@ -19,7 +19,7 @@ def greedy_decode(
     eos_token_id: Optional[int] = None,
 ):
     """
-    Greedy decoding for decoder-only GQA model (GPT-style).
+    Greedy decoding for decoder-only model (GPT-style).
     """
     model.eval()
     model.to(device)
@@ -74,7 +74,7 @@ def load_latest_checkpoint(checkpoint_dir, vocab_size, tokenizer):
     latest_ckpt = max(ckpt_list, key=os.path.getmtime)
     print(f"Loading latest checkpoint: {latest_ckpt}")
 
-    model = DecoderOnlyGQAModel.load_from_checkpoint(
+    model = DecoderOnlyMQAModel.load_from_checkpoint(
         latest_ckpt,
         vocab_size=vocab_size,
         tokenizer=tokenizer
@@ -86,7 +86,7 @@ if __name__ == "__main__":
     tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
 
-    model = load_latest_checkpoint("GQACheckpoints", vocab_size, tokenizer)
+    model = load_latest_checkpoint(os.path.join(PROJECT_ROOT, 'checkpoints', 'MQACheckpoints'), vocab_size, tokenizer)
 
     src_text = "Artificial intelligence is transforming"
     #src_text = "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies"

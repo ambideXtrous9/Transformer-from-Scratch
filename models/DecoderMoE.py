@@ -1,12 +1,15 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from typing import Optional
 
-from Embedding import TokenEmbeddingModule
-from MultiHeadSelfAttention import MultiHeadSelfAttention
-from AddNorm import AddNorm
+from core.Embedding import TokenEmbeddingModule
+from core.attention.MultiHeadSelfAttention import MultiHeadSelfAttention
+from core.AddNorm import AddNorm
 
 # Metrics
 import sacrebleu

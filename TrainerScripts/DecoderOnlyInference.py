@@ -1,32 +1,25 @@
-import sys
-import os
-
-# Add parent directory to path so we can import project modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 import glob
 import torch
 from typing import Optional
-from GSM8KTrainer import GSM8KModel
-from Embedding import get_tokenizer
+from models.DecoderOnlySeq2SeqModel import DecoderOnlyModel
+from core.Embedding import get_tokenizer, tokenize_batch
 
 
 def greedy_decode(
-    model: GSM8KModel,
+    model: DecoderOnlyModel,
     tokenizer,
-    question: str,
-    max_len: int = 256,
+    prompt: str,
+    max_len: int = 50,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
     bos_token_id: Optional[int] = None,
     eos_token_id: Optional[int] = None,
 ):
     """
-    Greedy decoding for math question answering.
-    
-    The prompt is formatted as:
-        "Question: {question}\nAnswer:"
-    
-    The model then generates the step-by-step solution.
+    Greedy decoding for decoder-only model (GPT-style).
     """
     model.eval()
     model.to(device)
@@ -36,9 +29,6 @@ def greedy_decode(
         bos_token_id = tokenizer.bos_token_id or tokenizer.cls_token_id
     if eos_token_id is None:
         eos_token_id = tokenizer.eos_token_id
-
-    # Format prompt
-    prompt = f"Question: {question}\nAnswer:"
 
     # Tokenize prompt
     enc = tokenizer(
@@ -73,16 +63,18 @@ def greedy_decode(
     return decoded
 
 
+
 def load_latest_checkpoint(checkpoint_dir, vocab_size, tokenizer):
-    """Load the latest checkpoint from the GSM8K checkpoint directory."""
+    # Find all ckpt files in directory
     ckpt_list = glob.glob(os.path.join(checkpoint_dir, "*.ckpt"))
     if not ckpt_list:
         raise FileNotFoundError(f"No checkpoint found in {checkpoint_dir}")
-    
+
+    # Get latest by modification time
     latest_ckpt = max(ckpt_list, key=os.path.getmtime)
     print(f"Loading latest checkpoint: {latest_ckpt}")
-    
-    model = GSM8KModel.load_from_checkpoint(
+
+    model = DecoderOnlyModel.load_from_checkpoint(
         latest_ckpt,
         vocab_size=vocab_size,
         tokenizer=tokenizer
@@ -94,19 +86,13 @@ if __name__ == "__main__":
     tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
 
-    checkpoint_dir = os.path.join(os.path.dirname(__file__), 'GSM8KCheckpoints')
-    model = load_latest_checkpoint(checkpoint_dir, vocab_size, tokenizer)
+    model = load_latest_checkpoint(os.path.join(PROJECT_ROOT, 'checkpoints', 'DecoderOnlyCheckpoints'), vocab_size, tokenizer)
 
-    # Sample GSM8K-style questions
-    questions = [
-        "Janet's ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells every duck egg at the farmers' market daily for $2. How much in dollars does she make every day at the farmers' market?",
-        "A robe takes 2 bolts of blue fiber and half that much white fiber. How many bolts in total does it take?",
-        "Josh decides to try flipping a house. He buys a house for $80,000 and then puts in $50,000 in repairs. This increased the value of the house by 150%. How much profit did he make?",
-    ]
-
-    for q in questions:
-        output = greedy_decode(model, tokenizer, q, max_len=256)
-        print("\n" + "=" * 60)
-        print(f"Question: {q}")
-        print(f"\nGenerated Answer:\n{output}")
-        print("=" * 60)
+    src_text = "Artificial intelligence is transforming"
+    #src_text = "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies"
+    # src_text = "Climate change poses significant challenges such as Researchers have pointed out that this shift is inevitable"
+    output = greedy_decode(model, tokenizer, src_text, max_len=100)
+    print("\n----------------------------------------------\n")
+    print("Input :", src_text)
+    print("Output:", output)
+    print("\n----------------------------------------------\n")

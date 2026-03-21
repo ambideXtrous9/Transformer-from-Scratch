@@ -1,12 +1,15 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import torch
 import torch.nn as nn
 from pytorch_lightning import LightningModule
 from typing import Optional
 
-from Embedding import TokenEmbeddingModule, get_tokenizer, tokenize_batch
-from MultiHeadSelfAttention import MultiHeadSelfAttention
-from AddNorm import AddNorm
-from FFN import PositionwiseFeedForward
+from core.Embedding import TokenEmbeddingModule, get_tokenizer, tokenize_batch
+from core.attention.MultiHeadSelfAttention import MultiHeadSelfAttention
+from core.AddNorm import AddNorm
+from core.FFN import PositionwiseFeedForward
 
 
 

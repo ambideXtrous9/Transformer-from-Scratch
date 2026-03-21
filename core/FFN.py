@@ -1,9 +1,12 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import torch
 import torch.nn as nn
 from pytorch_lightning import LightningModule
-from Embedding import get_tokenizer, tokenize_batch, TokenEmbeddingModule
-from MultiHeadSelfAttention import MultiHeadSelfAttention
-from AddNorm import AddNorm
+from core.Embedding import get_tokenizer, tokenize_batch, TokenEmbeddingModule
+from core.attention.MultiHeadSelfAttention import MultiHeadSelfAttention
+from core.AddNorm import AddNorm
 
 
 class PositionwiseFeedForward(LightningModule):

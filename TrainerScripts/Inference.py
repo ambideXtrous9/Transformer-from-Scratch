@@ -1,12 +1,15 @@
-import os
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 import glob
 import torch
 from typing import Optional
-from Seq2SeqModel import Seq2SeqModel
-from Embedding import get_tokenizer, tokenize_batch
+from models.CrossAttentionSeq2SeqModel import CrossAttentionSeq2SeqModel
+from core.Embedding import get_tokenizer, tokenize_batch
 
 def greedy_decode(
-    model: Seq2SeqModel,
+    model: CrossAttentionSeq2SeqModel,
     tokenizer,
     src_text: str,
     max_len: int = 50,
@@ -61,12 +64,12 @@ def load_latest_checkpoint(checkpoint_dir, vocab_size, tokenizer):
     ckpt_list = glob.glob(os.path.join(checkpoint_dir, "*.ckpt"))
     if not ckpt_list:
         raise FileNotFoundError(f"No checkpoint found in {checkpoint_dir}")
-    
+
     # Get latest by modification time
     latest_ckpt = max(ckpt_list, key=os.path.getmtime)
     print(f"Loading latest checkpoint: {latest_ckpt}")
-    
-    model = Seq2SeqModel.load_from_checkpoint(
+
+    model = CrossAttentionSeq2SeqModel.load_from_checkpoint(
         latest_ckpt,
         vocab_size=vocab_size,
         tokenizer=tokenizer
@@ -78,7 +81,7 @@ if __name__ == "__main__":
     tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
 
-    model = load_latest_checkpoint("Seq2SeqCheckpoints", vocab_size, tokenizer)
+    model = load_latest_checkpoint(os.path.join(PROJECT_ROOT, 'checkpoints', 'Seq2SeqCheckpoints'), vocab_size, tokenizer)
 
     # src_text = "Artificial intelligence is transforming"
     # src_text = "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies"

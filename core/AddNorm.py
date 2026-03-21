@@ -1,10 +1,13 @@
 # file: addnorm.py
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import torch
 import torch.nn as nn
 from pytorch_lightning import LightningModule
 
-from Embedding import get_tokenizer, tokenize_batch, TokenEmbeddingModule
-from MultiHeadSelfAttention import MultiHeadSelfAttention
+from core.Embedding import get_tokenizer, tokenize_batch, TokenEmbeddingModule
+from core.attention.MultiHeadSelfAttention import MultiHeadSelfAttention
 
 class AddNorm(LightningModule):
     def __init__(self, d_model: int, dropout: float = 0.1, eps: float = 1e-5):

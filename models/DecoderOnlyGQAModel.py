@@ -1,16 +1,15 @@
-import os
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 from typing import Optional
 
-from Embedding import TokenEmbeddingModule
-from GroupQueryAttention import GroupQueryAttention
-from AddNorm import AddNorm
-from FFN import PositionwiseFeedForward
+from core.Embedding import TokenEmbeddingModule
+from core.attention.GroupQueryAttention import GroupQueryAttention
+from core.AddNorm import AddNorm
+from core.FFN import PositionwiseFeedForward
 
 # Metrics
 import sacrebleu

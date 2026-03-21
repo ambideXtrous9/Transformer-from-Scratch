@@ -1,13 +1,16 @@
-import os
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 import glob
 import torch
 from typing import Optional
-from DecoderMoE import DecoderOnlyMoEModel
-from Embedding import get_tokenizer
+from models.DecoderOnlyGQAModel import DecoderOnlyGQAModel
+from core.Embedding import get_tokenizer, tokenize_batch
 
 
 def greedy_decode(
-    model: DecoderOnlyMoEModel,
+    model: DecoderOnlyGQAModel,
     tokenizer,
     prompt: str,
     max_len: int = 50,
@@ -16,7 +19,7 @@ def greedy_decode(
     eos_token_id: Optional[int] = None,
 ):
     """
-    Greedy decoding for decoder-only model (GPT-style).
+    Greedy decoding for decoder-only GQA model (GPT-style).
     """
     model.eval()
     model.to(device)
@@ -66,12 +69,12 @@ def load_latest_checkpoint(checkpoint_dir, vocab_size, tokenizer):
     ckpt_list = glob.glob(os.path.join(checkpoint_dir, "*.ckpt"))
     if not ckpt_list:
         raise FileNotFoundError(f"No checkpoint found in {checkpoint_dir}")
-    
+
     # Get latest by modification time
     latest_ckpt = max(ckpt_list, key=os.path.getmtime)
     print(f"Loading latest checkpoint: {latest_ckpt}")
-    
-    model = DecoderOnlyMoEModel.load_from_checkpoint(
+
+    model = DecoderOnlyGQAModel.load_from_checkpoint(
         latest_ckpt,
         vocab_size=vocab_size,
         tokenizer=tokenizer
@@ -83,9 +86,9 @@ if __name__ == "__main__":
     tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
 
-    model = load_latest_checkpoint("DecoderMoECheckpoints", vocab_size, tokenizer)
+    model = load_latest_checkpoint(os.path.join(PROJECT_ROOT, "checkpoints", "GQACheckpoints"), vocab_size, tokenizer)
 
-    src_text = "Artificial intelligence is"
+    src_text = "Artificial intelligence is transforming"
     #src_text = "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies"
     # src_text = "Climate change poses significant challenges such as Researchers have pointed out that this shift is inevitable"
     output = greedy_decode(model, tokenizer, src_text, max_len=100)

@@ -1,12 +1,12 @@
-import os
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
-from Embedding import get_tokenizer
-from DecoderOnlyGQAModel import DecoderOnlyGQAModel
+from core.Embedding import get_tokenizer
+from models.DecoderOnlyGQAModel import DecoderOnlyGQAModel
 from torch.utils.data import random_split
 from pytorch_lightning.callbacks import ModelCheckpoint
 
@@ -15,7 +15,7 @@ import pandas as pd
 pl.seed_everything(42)
 
 # ------------------ Demo DataFrame ------------------
-df = pd.read_csv(os.path.join(os.path.dirname(__file__), '..', "versatile_dataset_2000.csv"))
+df = pd.read_csv(os.path.join(PROJECT_ROOT, "data", "versatile_dataset_2000.csv"))
 
 print(f"\n---------DataFrame shape: {df.shape}---------\n")
 
@@ -120,7 +120,7 @@ model = DecoderOnlyGQAModel(
 
 
 checkpoint_callback = ModelCheckpoint(
-    dirpath = 'GQACheckpoints',
+    dirpath = os.path.join(PROJECT_ROOT, 'checkpoints', 'GQACheckpoints'),
     filename = 'DecoderOnlyGQABestModel',
     save_top_k = 1,
     verbose = True,

@@ -1,8 +1,11 @@
 # file: GroupQueryAttention.py
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 import torch
 import torch.nn as nn
 from pytorch_lightning import LightningModule
-from Embedding import get_tokenizer, tokenize_batch, TokenEmbeddingModule
+from core.Embedding import get_tokenizer, tokenize_batch, TokenEmbeddingModule
 
 
 class GroupQueryAttention(LightningModule):
@@ -138,7 +141,7 @@ if __name__ == "__main__":
     print("Attention shape:", attn.shape)   # torch.Size([2, 8, seq_len, seq_len])
 
     # Compare parameter counts
-    from MultiHeadSelfAttention import MultiHeadSelfAttention
+    from core.attention.MultiHeadSelfAttention import MultiHeadSelfAttention
     mha = MultiHeadSelfAttention(d_model=256, num_heads=8)
     mha_params = sum(p.numel() for p in mha.parameters())
     gqa_params = sum(p.numel() for p in gqa.parameters())

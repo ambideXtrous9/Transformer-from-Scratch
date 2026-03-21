@@ -1,8 +1,12 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 import torch
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
-from Embedding import get_tokenizer
-from CrossAttentionSeq2SeqModel import CrossAttentionSeq2SeqModel  # the training module we just created
+from core.Embedding import get_tokenizer
+from models.CrossAttentionSeq2SeqModel import CrossAttentionSeq2SeqModel  # the training module we just created
 from torch.utils.data import random_split
 from pytorch_lightning.callbacks import ModelCheckpoint
 
@@ -11,7 +15,7 @@ import pandas as pd
 pl.seed_everything(42)
 
 # ------------------ Demo DataFrame ------------------
-df = pd.read_csv("versatile_dataset_2000.csv")
+df = pd.read_csv(os.path.join(PROJECT_ROOT, "data", "versatile_dataset_2000.csv"))
 
 print(f"\n---------DataFrame shape: {df.shape}---------\n")
 
@@ -140,7 +144,7 @@ model = CrossAttentionSeq2SeqModel(
 
 
 checkpoint_callback = ModelCheckpoint(
-    dirpath = 'CrossAttentionSeq2SeqCheckpoints',
+    dirpath = os.path.join(PROJECT_ROOT, 'checkpoints', 'Seq2SeqCheckpoints'),
     filename = 'CrossAttentionSeq2SeqBestModel',
     save_top_k = 1,
     verbose = True,

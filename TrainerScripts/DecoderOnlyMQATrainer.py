@@ -1,12 +1,12 @@
-import os
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
-from Embedding import get_tokenizer
-from DecoderOnlyMLAModel import DecoderOnlyMLAModel
+from core.Embedding import get_tokenizer
+from models.DecoderOnlyMQAModel import DecoderOnlyMQAModel
 from torch.utils.data import random_split
 from pytorch_lightning.callbacks import ModelCheckpoint
 
@@ -15,7 +15,7 @@ import pandas as pd
 pl.seed_everything(42)
 
 # ------------------ Demo DataFrame ------------------
-df = pd.read_csv("versatile_dataset_2000.csv")
+df = pd.read_csv(os.path.join(PROJECT_ROOT, "data", "versatile_dataset_2000.csv"))
 
 print(f"\n---------DataFrame shape: {df.shape}---------\n")
 
@@ -103,13 +103,12 @@ val_loader = DataLoader(val_dataset, batch_size=2)
 # ---------------- Lightning Model ----------------
 
 
-model = DecoderOnlyMLAModel(
+model = DecoderOnlyMQAModel(
     vocab_size=vocab_size,
     d_model=256,          # smaller d_model for demo
     max_positions=64,
     num_layers=4,
     num_heads=4,
-    d_compress=64,
     d_ff=512,
     tokenizer=tokenizer,
     dropout=0.1,
@@ -120,8 +119,8 @@ model = DecoderOnlyMLAModel(
 
 
 checkpoint_callback = ModelCheckpoint(
-    dirpath = 'MLACheckpoints',
-    filename = 'DecoderOnlyMLABestModel',
+    dirpath = os.path.join(PROJECT_ROOT, 'checkpoints', 'MQACheckpoints'),
+    filename = 'DecoderOnlyMQABestModel',
     save_top_k = 1,
     verbose = True,
     monitor = 'val_loss_epoch',

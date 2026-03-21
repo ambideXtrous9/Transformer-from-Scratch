@@ -1,12 +1,12 @@
-import os
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
-from Embedding import get_tokenizer
-from DecoderOnlyMQAModel import DecoderOnlyMQAModel  # the training module we just created
+from core.Embedding import get_tokenizer
+from models.DecoderMoE import DecoderOnlyMoEModel
 from torch.utils.data import random_split
 from pytorch_lightning.callbacks import ModelCheckpoint
 
@@ -15,7 +15,7 @@ import pandas as pd
 pl.seed_everything(42)
 
 # ------------------ Demo DataFrame ------------------
-df = pd.read_csv("versatile_dataset_2000.csv")
+df = pd.read_csv(os.path.join(PROJECT_ROOT, "data", "versatile_dataset_2000.csv"))
 
 print(f"\n---------DataFrame shape: {df.shape}---------\n")
 
@@ -103,7 +103,7 @@ val_loader = DataLoader(val_dataset, batch_size=2)
 # ---------------- Lightning Model ----------------
 
 
-model = DecoderOnlyMQAModel(
+model = DecoderOnlyMoEModel(
     vocab_size=vocab_size,
     d_model=256,          # smaller d_model for demo
     max_positions=64,
@@ -113,14 +113,16 @@ model = DecoderOnlyMQAModel(
     tokenizer=tokenizer,
     dropout=0.1,
     pad_token_id=pad_id,
-    lr=1e-3
+    lr=1e-3,
+    num_experts=4,
+    top_k=2
 )
 
 
 
 checkpoint_callback = ModelCheckpoint(
-    dirpath = 'MQACheckpoints',
-    filename = 'DecoderOnlyMQABestModel',
+    dirpath = os.path.join(PROJECT_ROOT, 'checkpoints', 'DecoderMoECheckpoints'),
+    filename = 'DecoderMoEBestModel',
     save_top_k = 1,
     verbose = True,
     monitor = 'val_loss_epoch',

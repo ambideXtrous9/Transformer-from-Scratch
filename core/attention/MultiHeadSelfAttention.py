@@ -1,8 +1,11 @@
 # file: mhsa.py
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 import torch
 import torch.nn as nn
 from pytorch_lightning import LightningModule
-from Embedding import get_tokenizer, tokenize_batch, TokenEmbeddingModule
+from core.Embedding import get_tokenizer, tokenize_batch, TokenEmbeddingModule
 
 class MultiHeadSelfAttention(LightningModule):
     def __init__(self, d_model: int = 256, num_heads: int = 8, dropout: float = 0.1, causal: bool = False):

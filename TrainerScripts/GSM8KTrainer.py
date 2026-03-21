@@ -1,14 +1,12 @@
-import sys
-import os
-
-# Add parent directory to path so we can import project modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
-from Embedding import get_tokenizer
-from DecoderOnlySeq2SeqModel import DecoderOnlyModel
+from core.Embedding import get_tokenizer
+from models.DecoderOnlySeq2SeqModel import DecoderOnlyModel
 from pytorch_lightning.callbacks import ModelCheckpoint
 from datasets import load_dataset
 
@@ -161,9 +159,8 @@ if __name__ == "__main__":
     print(f"\nModel parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # ==================== Checkpointing ====================
-    checkpoint_dir = os.path.join(os.path.dirname(__file__), 'GSM8KCheckpoints')
     checkpoint_callback = ModelCheckpoint(
-        dirpath=checkpoint_dir,
+        dirpath=os.path.join(PROJECT_ROOT, 'checkpoints', 'GSM8KCheckpoints'),
         filename='GSM8K-DecoderOnly-{epoch:02d}-{val_loss_epoch:.4f}',
         save_top_k=1,
         verbose=True,

@@ -1,13 +1,16 @@
-import os
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 import glob
 import torch
 from typing import Optional
-from DecoderOnlySeq2SeqModel import DecoderOnlyModel
-from Embedding import get_tokenizer, tokenize_batch
+from models.DecoderMoE import DecoderOnlyMoEModel
+from core.Embedding import get_tokenizer
 
 
 def greedy_decode(
-    model: DecoderOnlyModel,
+    model: DecoderOnlyMoEModel,
     tokenizer,
     prompt: str,
     max_len: int = 50,
@@ -71,7 +74,7 @@ def load_latest_checkpoint(checkpoint_dir, vocab_size, tokenizer):
     latest_ckpt = max(ckpt_list, key=os.path.getmtime)
     print(f"Loading latest checkpoint: {latest_ckpt}")
     
-    model = DecoderOnlyModel.load_from_checkpoint(
+    model = DecoderOnlyMoEModel.load_from_checkpoint(
         latest_ckpt,
         vocab_size=vocab_size,
         tokenizer=tokenizer
@@ -83,9 +86,9 @@ if __name__ == "__main__":
     tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
 
-    model = load_latest_checkpoint("DecoderOnlyCheckpoints", vocab_size, tokenizer)
+    model = load_latest_checkpoint(os.path.join(PROJECT_ROOT, "checkpoints", "DecoderMoECheckpoints"), vocab_size, tokenizer)
 
-    src_text = "Artificial intelligence is transforming"
+    src_text = "Artificial intelligence is"
     #src_text = "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies"
     # src_text = "Climate change poses significant challenges such as Researchers have pointed out that this shift is inevitable"
     output = greedy_decode(model, tokenizer, src_text, max_len=100)

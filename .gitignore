@@ -211,3 +211,6 @@ __marimo__/
 *.csv
 *.pt
 transformer/
+wandb/
+checkpoints/
+GSM8K/

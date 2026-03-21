@@ -5,7 +5,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import glob
 import torch
 from typing import Optional
-from TrainerScripts.GSM8KTrainer import GSM8KModel
+from PLTrainerScripts.GSM8KTrainer import GSM8KModel
 from core.Embedding import get_tokenizer
 
 

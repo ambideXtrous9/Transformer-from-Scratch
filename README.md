@@ -4,12 +4,13 @@
 
 [![PyTorch](https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white)](https://pytorch.org/)
 [![Lightning](https://img.shields.io/badge/Lightning-792EE5?style=for-the-badge&logo=pytorchlightning&logoColor=white)](https://pytorch-lightning.readthedocs.io/)
+[![HuggingFace](https://img.shields.io/badge/HuggingFace-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black)](https://huggingface.co/docs/transformers/)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 **A complete, production-ready implementation of the Transformer architecture from "Attention Is All You Need"**
 
-*Built with PyTorch Lightning for scalable training and inference*
+*Built with PyTorch Lightning & HuggingFace Trainer for scalable training and inference*
 
 </div>
 
@@ -18,7 +19,7 @@
 ## ✨ What Makes This Special
 
 🎯 **Complete Implementation** - Every component from the original paper, meticulously crafted
-⚡ **Lightning Fast** - PyTorch Lightning integration for distributed training
+⚡ **Two Training Frameworks** - PyTorch Lightning (`PLTrainerScripts/`) and HuggingFace Trainer (`HFTrainerScripts/`)
 🧠 **Production Ready** - Proper error handling, logging, and checkpointing
 🔧 **Modular Design** - Each component is independently testable and reusable
 🧪 **Independent Testing** - Run each module separately for debugging and learning
@@ -96,69 +97,64 @@ pip install -r requirements.txt
 
 ### 2. Training
 
-All training scripts are in `TrainerScripts/`. Run from the **project root**:
+Two training frameworks are available — same models, different training loops:
 
-#### CrossAttention Seq2Seq Model
+#### Option A: PyTorch Lightning (`PLTrainerScripts/`)
+
 ```bash
-python TrainerScripts/Trainer.py
+python PLTrainerScripts/Trainer.py                  # CrossAttention Seq2Seq
+python PLTrainerScripts/DecoderOnlyTrainer.py       # Decoder-Only (MHA)
+python PLTrainerScripts/DecoderMoETrainer.py        # Mixture of Experts
+python PLTrainerScripts/DecoderOnlyGQATrainer.py    # Group Query Attention
+python PLTrainerScripts/DecoderOnlyMQATrainer.py    # Multi-Query Attention
+python PLTrainerScripts/DecoderOnlyMLATrainer.py    # Multi-Head Latent Attention
+python PLTrainerScripts/GSM8KTrainer.py             # GSM8K Math Reasoning
 ```
 
-#### Decoder-Only Model (GPT-style)
+- Uses PyTorch Lightning `Trainer` with `ModelCheckpoint` callback
+- Computes BLEU, ROUGE, METEOR, BERTScore during validation
+- Saves best model by `val_loss_epoch`
+
+#### Option B: HuggingFace Trainer (`HFTrainerScripts/`)
+
 ```bash
-python TrainerScripts/DecoderOnlyTrainer.py
+python HFTrainerScripts/DecoderOnlyTrainer.py       # Decoder-Only (MHA)
+python HFTrainerScripts/MoETrainer.py               # Mixture of Experts
+python HFTrainerScripts/GQATrainer.py               # Group Query Attention
+python HFTrainerScripts/MQATrainer.py               # Multi-Query Attention
+python HFTrainerScripts/MLATrainer.py               # Multi-Head Latent Attention
+python HFTrainerScripts/GSM8KTrainer.py             # GSM8K Math Reasoning
 ```
 
-#### Decoder-Only with Mixture of Experts
-```bash
-python TrainerScripts/DecoderMoETrainer.py
-```
-
-#### Decoder-Only with GQA / MQA / MLA
-```bash
-python TrainerScripts/DecoderOnlyGQATrainer.py
-python TrainerScripts/DecoderOnlyMQATrainer.py
-python TrainerScripts/DecoderOnlyMLATrainer.py
-```
-
-#### GSM8K Math Reasoning
-```bash
-python TrainerScripts/GSM8KTrainer.py
-```
-
-**Training Features:**
-- 🎯 **Automatic checkpointing** - Best model saved automatically
-- 📊 **Real-time monitoring** - Loss tracking and validation metrics
-- 🔄 **GPU acceleration** - GPU support
-- 📈 **Progress tracking** - Detailed logging and progress bars
-- 📊 **Comprehensive Metrics** - BLEU, ROUGE, METEOR, BERTScore evaluation
+- Uses HuggingFace `Trainer` with `SaveBestModelCallback`
+- Saves exactly one checkpoint — the model with the lowest `eval_loss`
+- Generation with temperature, top-k, top-p, and repetition penalty
 
 ### 3. Inference
 
-#### CrossAttention Seq2Seq Model
+#### PyTorch Lightning models
 ```bash
-python TrainerScripts/Inference.py
+python PLTrainerScripts/Inference.py                 # CrossAttention Seq2Seq
+python PLTrainerScripts/DecoderOnlyInference.py      # Decoder-Only (MHA)
+python PLTrainerScripts/DecoderMoEInference.py       # MoE
+python PLTrainerScripts/DecoderOnlyGQAInference.py   # GQA
+python PLTrainerScripts/DecoderOnlyMQAInference.py   # MQA
+python PLTrainerScripts/DecoderOnlyMLAInference.py   # MLA
+python PLTrainerScripts/GSM8KInference.py            # GSM8K
 ```
 
-#### Decoder-Only Model
+#### HuggingFace Trainer models
 ```bash
-python TrainerScripts/DecoderOnlyInference.py
-```
-
-#### Decoder-Only with MoE / GQA / MQA / MLA
-```bash
-python TrainerScripts/DecoderMoEInference.py
-python TrainerScripts/DecoderOnlyGQAInference.py
-python TrainerScripts/DecoderOnlyMQAInference.py
-python TrainerScripts/DecoderOnlyMLAInference.py
-```
-
-#### GSM8K Math Reasoning
-```bash
-python TrainerScripts/GSM8KInference.py
+python HFTrainerScripts/DecoderOnlyInference.py      # Decoder-Only (MHA)
+python HFTrainerScripts/MoEInference.py              # MoE
+python HFTrainerScripts/GQAInference.py              # GQA
+python HFTrainerScripts/MQAInference.py              # MQA
+python HFTrainerScripts/MLAInference.py              # MLA
+python HFTrainerScripts/GSM8KInference.py            # GSM8K
 ```
 
 **Inference Features:**
-- 🎲 **Greedy decoding** - Deterministic text generation
+- 🎲 **Greedy decoding** (PL) / **Sampling with controls** (HF) — temperature, top-k, top-p, repetition penalty
 - ⚡ **Fast inference** - Optimized for production use
 - 🎯 **Flexible input** - Handle variable length sequences
 - 🔧 **Easy integration** - Simple API for your applications
@@ -245,13 +241,24 @@ All metrics are automatically computed during training validation steps and logg
 
 ### Training Configuration
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `batch_size` | 4 | Training batch size |
-| `learning_rate` | 1e-3 | Adam optimizer learning rate |
-| `max_epochs` | 100 | Maximum training epochs |
-| `gradient_clip` | 1.0 | Gradient clipping threshold |
-| `checkpoint_monitor` | val_loss_epoch | Model selection metric |
+| Parameter | PL | HF | Description |
+|-----------|----|----|-------------|
+| `batch_size` | 4 | 4 | Training batch size |
+| `learning_rate` | 1e-3 | 1e-3 | Adam optimizer learning rate |
+| `max_epochs` | 100 | 100 | Maximum training epochs |
+| `checkpoint_monitor` | val_loss_epoch | eval_loss | Model selection metric |
+| `checkpoint_strategy` | `ModelCheckpoint` (save_top_k=1) | `SaveBestModelCallback` (single best) | How the best model is saved |
+
+### Training Framework Comparison
+
+| Feature | PyTorch Lightning (`PLTrainerScripts/`) | HuggingFace Trainer (`HFTrainerScripts/`) |
+|---------|----------------------------------------|-------------------------------------------|
+| **Training loop** | `pl.Trainer` | `transformers.Trainer` |
+| **Validation metrics** | BLEU, ROUGE, METEOR, BERTScore | eval_loss |
+| **Checkpointing** | `ModelCheckpoint` callback | `SaveBestModelCallback` (exactly 1 best) |
+| **Inference decoding** | Greedy (argmax) | Sampling (temperature, top-k, top-p, repetition penalty) |
+| **Encoder-Decoder support** | Yes (CrossAttention Seq2Seq) | Decoder-only models only |
+| **Model wrapper** | Native LightningModule | `HFModelWrapper` (returns `CausalLMOutput`) |
 
 ---
 
@@ -279,7 +286,7 @@ transformer-from-scratch/
 │   ├── DecoderOnlyMQAModel.py               #   Decoder-only with MQA
 │   └── DecoderOnlyMLAModel.py               #   Decoder-only with MLA
 │
-├── TrainerScripts/                          # 🚀 Training & Inference Scripts
+├── PLTrainerScripts/                        # ⚡ PyTorch Lightning Training & Inference
 │   ├── Trainer.py                           #   CrossAttention Seq2Seq training
 │   ├── Inference.py                         #   CrossAttention Seq2Seq inference
 │   ├── DecoderOnlyTrainer.py                #   Decoder-only training
@@ -295,18 +302,39 @@ transformer-from-scratch/
 │   ├── GSM8KTrainer.py                      #   GSM8K math reasoning training
 │   └── GSM8KInference.py                    #   GSM8K math reasoning inference
 │
+├── HFTrainerScripts/                        # 🤗 HuggingFace Trainer Training & Inference
+│   ├── hf_wrapper.py                        #   HF-compatible model wrapper & utilities
+│   ├── DecoderOnlyTrainer.py                #   Decoder-only (MHA) training
+│   ├── DecoderOnlyInference.py              #   Decoder-only (MHA) inference
+│   ├── MQATrainer.py                        #   Multi-Query Attention training
+│   ├── MQAInference.py                      #   Multi-Query Attention inference
+│   ├── GQATrainer.py                        #   Group Query Attention training
+│   ├── GQAInference.py                      #   Group Query Attention inference
+│   ├── MLATrainer.py                        #   Multi-Head Latent Attention training
+│   ├── MLAInference.py                      #   Multi-Head Latent Attention inference
+│   ├── MoETrainer.py                        #   Mixture of Experts training
+│   ├── MoEInference.py                      #   Mixture of Experts inference
+│   ├── GSM8KTrainer.py                      #   GSM8K math reasoning training
+│   └── GSM8KInference.py                    #   GSM8K math reasoning inference
+│
 ├── data/                                    # 📊 Datasets
 │   ├── versatile_dataset_2000.csv           #   Main text completion dataset
 │   └── synthetic_text_completion.csv        #   Legacy dataset
 │
 ├── checkpoints/                             # 💾 Model Checkpoints
-│   ├── Seq2SeqCheckpoints/                  #   CrossAttention model
-│   ├── DecoderOnlyCheckpoints/              #   Decoder-only model
-│   ├── DecoderMoECheckpoints/               #   MoE model
-│   ├── GQACheckpoints/                      #   GQA model
-│   ├── MQACheckpoints/                      #   MQA model
-│   ├── MLACheckpoints/                      #   MLA model
-│   └── GSM8KCheckpoints/                    #   GSM8K model
+│   ├── Seq2SeqCheckpoints/                  #   PL: CrossAttention model
+│   ├── DecoderOnlyCheckpoints/              #   PL: Decoder-only model
+│   ├── DecoderMoECheckpoints/               #   PL: MoE model
+│   ├── GQACheckpoints/                      #   PL: GQA model
+│   ├── MQACheckpoints/                      #   PL: MQA model
+│   ├── MLACheckpoints/                      #   PL: MLA model
+│   ├── GSM8KCheckpoints/                    #   PL: GSM8K model
+│   ├── HF_DecoderOnlyCheckpoints/           #   HF: Decoder-only model
+│   ├── HF_MQACheckpoints/                   #   HF: MQA model
+│   ├── HF_GQACheckpoints/                   #   HF: GQA model
+│   ├── HF_MLACheckpoints/                   #   HF: MLA model
+│   ├── HF_MoECheckpoints/                   #   HF: MoE model
+│   └── HF_GSM8KCheckpoints/                 #   HF: GSM8K model
 │
 ├── docs/                                    # 📚 Documentation (38 files)
 │   ├── Embedding.md, AddNorm.md, FFN.md     #   Core component docs
@@ -359,18 +387,19 @@ transformer-from-scratch/
 ### Usage Example
 
 ```python
+# PyTorch Lightning
 from models.DecoderMoE import DecoderOnlyMoEModel
-
 model = DecoderOnlyMoEModel(
-    vocab_size=vocab_size,
-    d_model=256,
-    num_experts=4,      # Number of expert networks
-    top_k=2,            # Activate top 2 experts per token
-    num_layers=6,
-    tokenizer=tokenizer
+    vocab_size=vocab_size, d_model=256,
+    num_experts=4, top_k=2, num_layers=6, tokenizer=tokenizer
 )
-
 trainer.fit(model, train_loader, val_loader)
+
+# HuggingFace Trainer
+from HFTrainerScripts.hf_wrapper import HFModelWrapper
+wrapper = HFModelWrapper(model)
+hf_trainer = Trainer(model=wrapper, args=training_args, ...)
+hf_trainer.train()
 ```
 
 ---
@@ -405,6 +434,7 @@ We welcome contributions! Here's how you can help:
 ### Resources
 - 📖 [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/)
 - ⚡ [PyTorch Lightning Documentation](https://pytorch-lightning.readthedocs.io/)
+- 🤗 [HuggingFace Trainer Documentation](https://huggingface.co/docs/transformers/main_classes/trainer)
 - 🎓 [Attention Mechanism Explained](https://distill.pub/2016/augmented-rnns/)
 - 🔥 [Transformer from Scratch](https://www.youtube.com/watch?v=ISNdQcPhsts)
 

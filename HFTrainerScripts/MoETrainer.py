@@ -15,7 +15,7 @@ from transformers import Trainer, TrainingArguments
 
 from core.Embedding import get_tokenizer
 from models.DecoderMoE import DecoderOnlyMoEModel
-from HFTrainerScripts.hf_wrapper import HFModelWrapper, SaveBestModelCallback
+from HFTrainerScripts.hf_wrapper import HFModelWrapper, SaveBestModelCallback, make_compute_metrics, preprocess_logits_for_metrics
 
 torch.manual_seed(42)
 
@@ -112,6 +112,8 @@ if __name__ == "__main__":
     trainer = Trainer(
         model=model, args=training_args,
         train_dataset=train_dataset, eval_dataset=val_dataset,
+        compute_metrics=make_compute_metrics(tokenizer),
+        preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         callbacks=[best_callback],
     )
 

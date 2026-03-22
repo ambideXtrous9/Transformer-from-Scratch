@@ -12,9 +12,15 @@ import glob
 import os
 import shutil
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import sacrebleu
+from rouge_score import rouge_scorer
+from nltk.translate.meteor_score import meteor_score
+import nltk
+nltk.download('wordnet', quiet=True)
 from safetensors.torch import load_file as load_safetensors, save_file as save_safetensors
 from transformers import PretrainedConfig, TrainerCallback
 from transformers.modeling_outputs import CausalLMOutput
@@ -144,6 +150,74 @@ class HFModelWrapper(nn.Module):
                 break
 
         return input_ids
+
+
+# ==================== Metrics ====================
+
+def preprocess_logits_for_metrics(logits, labels):
+    """Convert logits to predicted token IDs before accumulation (saves memory)."""
+    if isinstance(logits, tuple):
+        logits = logits[0]
+    return logits.argmax(dim=-1)
+
+
+def make_compute_metrics(tokenizer):
+    """
+    Returns a compute_metrics function for HF Trainer that computes
+    BLEU, ROUGE-1/2/L, and METEOR — matching the PL Trainer metrics.
+    """
+    pad_token_id = tokenizer.pad_token_id
+
+    def compute_metrics(eval_preds):
+        pred_ids, label_ids = eval_preds
+
+        # Decode predictions (already argmax'd by preprocess_logits_for_metrics)
+        pred_texts = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
+
+        # Replace -100 in labels with pad token before decoding
+        label_ids = np.where(label_ids != -100, label_ids, pad_token_id)
+        ref_texts = tokenizer.batch_decode(label_ids, skip_special_tokens=True)
+
+        if len(pred_texts) == 0:
+            return {}
+
+        # BLEU
+        bleu = sacrebleu.corpus_bleu(pred_texts, [ref_texts])
+
+        # ROUGE
+        scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
+        rouge_scores = [scorer.score(r, g) for r, g in zip(ref_texts, pred_texts)]
+
+        avg_rouge1 = sum(s["rouge1"].fmeasure for s in rouge_scores) / len(rouge_scores)
+        avg_rouge2 = sum(s["rouge2"].fmeasure for s in rouge_scores) / len(rouge_scores)
+        avg_rougeL = sum(s["rougeL"].fmeasure for s in rouge_scores) / len(rouge_scores)
+
+        # METEOR
+        meteor_scores = [
+            meteor_score([r.split()], g.split())
+            for r, g in zip(ref_texts, pred_texts)
+        ]
+        avg_meteor = sum(meteor_scores) / len(meteor_scores)
+
+        print(
+            f"\n----------------------------------------------\n"
+            f" BLEU: {bleu.score:.2f}\n"
+            f" ROUGE-1: {avg_rouge1:.4f}\n"
+            f" ROUGE-2: {avg_rouge2:.4f}\n"
+            f" ROUGE-L: {avg_rougeL:.4f}\n"
+            f" METEOR: {avg_meteor:.4f}\n"
+            f"----------------------------------------------\n"
+        )
+
+        return {
+            "bleu": bleu.score,
+            "rouge1": avg_rouge1,
+            "rouge2": avg_rouge2,
+            "rougeL": avg_rougeL,
+            "meteor": avg_meteor,
+        }
+
+    return compute_metrics
 
 
 # ==================== Save-best callback ====================

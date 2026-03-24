@@ -12,6 +12,8 @@ import glob
 import os
 import shutil
 
+import math
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -30,7 +32,7 @@ class CustomModelConfig(PretrainedConfig):
     """Config that satisfies HF Trainer callbacks (.to_json_string(), .get(), etc.)."""
     model_type = "custom_decoder_only"
 
-    def __init__(self, vocab_size=50257, max_positions=64, **kwargs):
+    def __init__(self, vocab_size=50257, max_positions=256, **kwargs):
         super().__init__(**kwargs)
         self.vocab_size = vocab_size
         self.max_positions = max_positions
@@ -218,6 +220,108 @@ def make_compute_metrics(tokenizer):
         }
 
     return compute_metrics
+
+
+def make_compute_perplexity():
+    """
+    Returns a TrainerCallback that computes perplexity from eval_loss
+    and adds it to the metrics dict after each evaluation.
+    """
+
+    class PerplexityCallback(TrainerCallback):
+        def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+            if metrics is None:
+                return
+            eval_loss = metrics.get("eval_loss")
+            if eval_loss is not None:
+                perplexity = math.exp(eval_loss)
+                metrics["eval_perplexity"] = perplexity
+                print(f"  Perplexity: {perplexity:.4f}")
+
+    return PerplexityCallback()
+
+
+# ==================== Batch Perplexity (inference) ====================
+
+def compute_batch_perplexity(model, tokenizer, input_texts, max_length=256, device="cpu"):
+    """
+    Compute per-sample and mean perplexity for a batch of texts using
+    log-softmax with proper padding masking.
+
+    Our models do NOT internally shift labels — the dataset already handles it:
+        input_ids = [BOS] + tokens,  labels = tokens + [EOS]
+    So logits[i] predicts labels[i] directly (no shift needed here).
+
+    Args:
+        model: HFModelWrapper (or any model whose forward returns CausalLMOutput).
+        tokenizer: tokenizer with pad_token set.
+        input_texts: list of strings to evaluate.
+        max_length: max sequence length for tokenization.
+        device: "cpu" or "cuda".
+
+    Returns:
+        dict with "perplexities" (list[float]) and "mean_perplexity" (float).
+    """
+    model.eval()
+    model.to(device)
+
+    bos_id = tokenizer.bos_token_id
+    eos_id = tokenizer.eos_token_id
+    pad_id = tokenizer.pad_token_id
+
+    all_input_ids = []
+    all_labels = []
+
+    for text in input_texts:
+        enc = tokenizer(
+            text, truncation=True, max_length=max_length - 2,
+            return_tensors="pt", add_special_tokens=False,
+        )
+        ids = enc["input_ids"].squeeze(0)
+
+        input_ids = torch.cat([torch.tensor([bos_id]), ids])
+        labels = torch.cat([ids, torch.tensor([eos_id])])
+
+        # Pad
+        if len(input_ids) < max_length:
+            pad_len = max_length - len(input_ids)
+            input_ids = torch.cat([input_ids, torch.full((pad_len,), pad_id)])
+        else:
+            input_ids = input_ids[:max_length]
+
+        if len(labels) < max_length:
+            pad_len = max_length - len(labels)
+            labels = torch.cat([labels, torch.full((pad_len,), -100)])
+        else:
+            labels = labels[:max_length]
+
+        all_input_ids.append(input_ids)
+        all_labels.append(labels)
+
+    input_ids = torch.stack(all_input_ids).long().to(device)
+    labels = torch.stack(all_labels).long().to(device)
+
+    with torch.no_grad():
+        outputs = model(input_ids, labels=labels)
+        logits = outputs.logits
+
+    # Compute log probabilities and gather correct token probs
+    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+
+    mask = (labels != -100)
+    safe_labels = labels.clone()
+    safe_labels[~mask] = 0
+
+    target_log_probs = log_probs.gather(dim=-1, index=safe_labels.unsqueeze(-1)).squeeze(-1)
+    target_log_probs = target_log_probs * mask.float()
+
+    # Per-sample: mean NLL then exp
+    nll_per_sample = -target_log_probs.sum(dim=-1) / mask.sum(dim=-1).float()
+    perplexities = torch.exp(nll_per_sample).tolist()
+
+    mean_perplexity = sum(perplexities) / len(perplexities)
+
+    return {"perplexities": perplexities, "mean_perplexity": mean_perplexity}
 
 
 # ==================== Save-best callback ====================

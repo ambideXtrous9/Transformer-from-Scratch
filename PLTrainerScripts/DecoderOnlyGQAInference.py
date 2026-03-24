@@ -2,6 +2,7 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+import config
 import glob
 import torch
 from typing import Optional
@@ -83,16 +84,17 @@ def load_latest_checkpoint(checkpoint_dir, vocab_size, tokenizer):
 
 
 if __name__ == "__main__":
-    tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
+    tokenizer = get_tokenizer(config.TOKENIZER_NAME, add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
 
-    model = load_latest_checkpoint(os.path.join(PROJECT_ROOT, "checkpoints", "GQACheckpoints"), vocab_size, tokenizer)
+    model = load_latest_checkpoint(config.CHECKPOINTS["gqa"], vocab_size, tokenizer)
 
-    src_text = "Artificial intelligence is transforming"
-    #src_text = "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies"
-    # src_text = "Climate change poses significant challenges such as Researchers have pointed out that this shift is inevitable"
-    output = greedy_decode(model, tokenizer, src_text, max_len=100)
-    print("\n----------------------------------------------\n")
-    print("Input :", src_text)
-    print("Output:", output)
-    print("\n----------------------------------------------\n")
+    questions = config.SAMPLE_QUESTIONS
+
+    for q in questions:
+        prompt = f"Question: {q}\nAnswer:"
+        output = greedy_decode(model, tokenizer, prompt, max_len=config.MAX_LENGTH)
+        print("\n" + "=" * 60)
+        print(f"Question: {q}")
+        print(f"\nGenerated Answer:\n{output}")
+        print("=" * 60)

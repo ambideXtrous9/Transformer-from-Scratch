@@ -75,15 +75,15 @@ graph TD
 
 ## 6. Dry Run Trace
 
-**Source**: `"Climate change"` → Token IDs `[30145, 1487]`
+**Source**: `"Question: If a train travels 60 miles in 2 hours, how fast is it going?\nAnswer:"` → Token IDs `[24361, 25, 1002, ...]`
 
 | Step | tgt_ids | Decoder sees | Next Token | Action |
 |------|---------|-------------|------------|--------|
 | Init | `[BOS]` | 1 token + enc_out | — | — |
-| Iter 1 | `[BOS]` | cross-attn to `[30145, 1487]` | 318 ("is") | Append |
-| Iter 2 | `[BOS, 318]` | cross-attn to `[30145, 1487]` | 257 ("a") | Append |
-| Iter 3 | `[BOS, 318, 257]` | cross-attn to `[30145, 1487]` | EOS | **STOP** |
-| Output | `"is a"` | — | — | Decoded |
+| Iter 1 | `[BOS]` | cross-attn to `[24361, 25, ...]` | 464 ("The") | Append |
+| Iter 2 | `[BOS, 464]` | cross-attn to `[24361, 25, ...]` | 4644 ("train") | Append |
+| Iter 3 | `[BOS, 464, 4644]` | cross-attn to `[24361, 25, ...]` | EOS | **STOP** |
+| Output | `"The train"` | — | — | Decoded |
 
 **Note**: At each step, the Decoder attends to the Encoder output (the source sentence) via cross-attention, which guides the generation.
 

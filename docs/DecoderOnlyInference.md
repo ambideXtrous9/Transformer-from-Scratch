@@ -58,15 +58,15 @@ Loads the latest `.ckpt` file from `DecoderOnlyCheckpoints/`.
 
 ## 6. Dry Run Trace
 
-**Prompt**: `"The future of"`
+**Prompt**: `"Question: If a train travels 60 miles in 2 hours, how fast is it going?\nAnswer:"`
 
 | Step | Sequence | Next Token | Notes |
 |------|----------|------------|-------|
-| Init | `[BOS, 464, 2003, 286]` | — | Tokenized prompt |
-| Iter 1 | `[BOS, 464, 2003, 286]` | 9552 | "technology" |
-| Iter 2 | `[BOS, 464, 2003, 286, 9552]` | 318 | "is" |
-| Iter 3 | `[BOS, 464, 2003, 286, 9552, 318]` | EOS | **STOP** |
-| Output | — | — | `"The future of technology is"` |
+| Init | `[BOS, 24361, 25, 1002, ...]` | — | Tokenized GSM8K-style prompt |
+| Iter 1 | `[BOS, 24361, 25, ...]` | 464 | "The" |
+| Iter 2 | `[BOS, ..., 464]` | 4644 | "train" |
+| Iter 3 | `[BOS, ..., 4644]` | EOS | **STOP** |
+| Output | — | — | `"Question: If a train travels 60 miles...\nAnswer: The train"` |
 
 ## 7. Usage
 

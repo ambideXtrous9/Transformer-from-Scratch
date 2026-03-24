@@ -63,7 +63,7 @@ graph TD
         -   No causal mask → every token sees every other token.
         -   Padding mask applied if provided.
     -   **Add & Norm 1**: `x = LN(x + Dropout(attn_out))`.
-    -   **FFN**: `Linear(d_model → d_ff) → GELU → Linear(d_ff → d_model)`.
+    -   **FFN**: SwiGLU gated FFN (Swish gate).
     -   **Add & Norm 2**: `x = LN(x + Dropout(ffn_out))`.
 3.  **Final Norm**: `x = LayerNorm(x)`.
 

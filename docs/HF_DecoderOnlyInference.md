@@ -44,7 +44,8 @@ graph TD
 | Checkpoint format | `.ckpt` (Lightning) | `model.safetensors` (HF Trainer) |
 | Loading method | `Model.load_from_checkpoint()` | `load_wrapper_from_checkpoint()` |
 | Decoding | Pure greedy (argmax) | Sampling (temperature, top-k, top-p, repetition penalty) |
-| Max length enforcement | Manual check | Built into `generate_greedy` via `config.max_positions` |
+| Prompt format | Raw text prompt | GSM8K-style `"Question: ...\nAnswer:"` |
+| Max length enforcement | Manual check | Built into `generate_greedy` via `config.max_positions` (256) |
 
 ## 5. Functions
 
@@ -55,11 +56,12 @@ graph TD
 3. Call `load_wrapper_from_checkpoint()` — finds `best/` or latest `checkpoint-XXXX/`.
 4. Move to device, set eval mode.
 
-### `greedy_decode(model, tokenizer, prompt, max_len)`
+### `greedy_decode(model, tokenizer, question, max_len=256)`
 
-1. Tokenize prompt, prepend BOS if missing.
-2. Call `model.generate_greedy()` with default sampling parameters.
-3. Decode output token IDs to string.
+1. Format question as GSM8K-style prompt: `"Question: {question}\nAnswer:"`.
+2. Tokenize prompt, prepend BOS if missing.
+3. Call `model.generate_greedy()` with sampling parameters (temperature=0.8, top_k=50, top_p=0.9, repetition_penalty=1.2).
+4. Decode output token IDs to string.
 
 ## 6. Usage
 

@@ -9,24 +9,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 import torch
+import config
 
 from core.Embedding import get_tokenizer
 from models.DecoderOnlySeq2SeqModel import DecoderOnlyModel
-from HFTrainerScripts.hf_wrapper import HFModelWrapper, load_wrapper_from_checkpoint
+from HFTrainerScripts.hf_wrapper import HFModelWrapper, load_wrapper_from_checkpoint, compute_batch_perplexity
 
-CHECKPOINT_DIR = os.path.join(PROJECT_ROOT, "checkpoints", "HF_GSM8KCheckpoints")
-MAX_LENGTH = 256
+CHECKPOINT_DIR = config.CHECKPOINTS["hf_gsm8k"]
+MAX_LENGTH = config.MAX_LENGTH
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def load_model(checkpoint_dir=CHECKPOINT_DIR):
-    tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
+    tokenizer = get_tokenizer(config.TOKENIZER_NAME, add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
 
     base_model = DecoderOnlyModel(
-        vocab_size=vocab_size, d_model=256, max_positions=MAX_LENGTH,
-        num_layers=4, num_heads=4, d_ff=512, tokenizer=tokenizer,
-        dropout=0.1, pad_token_id=tokenizer.pad_token_id, lr=1e-3,
+        vocab_size=vocab_size, d_model=config.D_MODEL, max_positions=MAX_LENGTH,
+        num_layers=config.NUM_LAYERS, num_heads=config.NUM_HEADS, d_ff=config.D_FF, tokenizer=tokenizer,
+        dropout=config.DROPOUT, pad_token_id=tokenizer.pad_token_id, lr=config.LEARNING_RATE,
     )
     wrapper = HFModelWrapper(base_model)
     model = load_wrapper_from_checkpoint(wrapper, checkpoint_dir)
@@ -56,11 +57,7 @@ def greedy_decode(model, tokenizer, question, max_len=256):
 if __name__ == "__main__":
     model, tokenizer = load_model()
 
-    questions = [
-        "Janet's ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells every duck egg at the farmers' market daily for $2. How much in dollars does she make every day at the farmers' market?",
-        "A robe takes 2 bolts of blue fiber and half that much white fiber. How many bolts in total does it take?",
-        "Josh decides to try flipping a house. He buys a house for $80,000 and then puts in $50,000 in repairs. This increased the value of the house by 150%. How much profit did he make?",
-    ]
+    questions = config.SAMPLE_QUESTIONS
 
     for q in questions:
         output = greedy_decode(model, tokenizer, q, max_len=MAX_LENGTH)
@@ -68,3 +65,13 @@ if __name__ == "__main__":
         print(f"Question: {q}")
         print(f"\nGenerated Answer:\n{output}")
         print("=" * 60)
+
+    # Evaluate perplexity on sample texts
+    eval_texts = [f"Question: {q}\nAnswer:" for q in questions]
+    ppl_result = compute_batch_perplexity(model, tokenizer, eval_texts, max_length=MAX_LENGTH, device=DEVICE)
+    print("\n" + "=" * 60)
+    print("Perplexity Evaluation")
+    for text, ppl in zip(questions, ppl_result["perplexities"]):
+        print(f"  {text[:60]}... → PPL: {ppl:.2f}")
+    print(f"\n  Mean Perplexity: {ppl_result['mean_perplexity']:.2f}")
+    print("=" * 60)

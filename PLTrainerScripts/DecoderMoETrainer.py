@@ -7,30 +7,29 @@ from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
 from core.Embedding import get_tokenizer
 from models.DecoderMoE import DecoderOnlyMoEModel
-from torch.utils.data import random_split
 from pytorch_lightning.callbacks import ModelCheckpoint
+from datasets import load_dataset
+import config
 
-import pandas as pd
+pl.seed_everything(config.SEED)
 
-pl.seed_everything(42)
+MAX_LENGTH = config.MAX_LENGTH
 
-# ------------------ Demo DataFrame ------------------
-df = pd.read_csv(os.path.join(PROJECT_ROOT, "data", "versatile_dataset_2000.csv"))
-
-print(f"\n---------DataFrame shape: {df.shape}---------\n")
-
-class DecoderOnlyDataset(Dataset):
+class GSM8KDataset(Dataset):
     """
-    Dataset for decoder-only (GPT-style) training.
+    Dataset for decoder-only (GPT-style) training on GSM8K.
     - Input: [BOS] + text
     - Labels: text + [EOS], with -100 for padding
     """
-    def __init__(self, tokenizer, df, max_length=128):
+    def __init__(self, tokenizer, hf_dataset, max_length=256):
         self.tokenizer = tokenizer
-        self.texts = (df["text"] + " " + df["completion"]).tolist()  # merge prompt + target
         self.max_length = max_length
 
-        # Ensure special tokens exist
+        self.texts = []
+        for sample in hf_dataset:
+            text = f"Question: {sample['question']}\nAnswer: {sample['answer']}"
+            self.texts.append(text)
+
         if tokenizer.bos_token is None:
             tokenizer.add_special_tokens({"bos_token": "<s>"})
         if tokenizer.eos_token is None:
@@ -48,30 +47,24 @@ class DecoderOnlyDataset(Dataset):
     def __getitem__(self, idx):
         text = self.texts[idx]
 
-        # Tokenize target text (without BOS/EOS for now)
         enc = self.tokenizer(
             text,
             truncation=True,
-            max_length=self.max_length - 2,  # reserve BOS + EOS
+            max_length=self.max_length - 2,
             return_tensors="pt",
             add_special_tokens=False
         )
         ids = enc["input_ids"].squeeze(0)
 
-        # Input IDs: [BOS] + text
         input_ids = torch.cat([torch.tensor([self.bos_id]), ids], dim=0)
-
-        # Labels: text + [EOS]
         labels = torch.cat([ids, torch.tensor([self.eos_id])], dim=0)
 
-        # Pad input_ids
         if len(input_ids) < self.max_length:
             pad_len = self.max_length - len(input_ids)
             input_ids = torch.cat([input_ids, torch.full((pad_len,), self.pad_id)])
         else:
             input_ids = input_ids[:self.max_length]
 
-        # Pad labels with -100 (ignore index for loss)
         if len(labels) < self.max_length:
             pad_len = self.max_length - len(labels)
             labels = torch.cat([labels, torch.full((pad_len,), -100)])
@@ -85,43 +78,42 @@ class DecoderOnlyDataset(Dataset):
 
 
 # ---------------- Setup ----------------
-tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
+print("Loading GSM8K dataset from HuggingFace...")
+gsm8k = load_dataset(config.DATASET_NAME, config.DATASET_CONFIG)
+train_data = gsm8k["train"]
+test_data = gsm8k["test"]
+
+print(f"\nTrain samples: {len(train_data)}")
+print(f"Test samples:  {len(test_data)}")
+
+tokenizer = get_tokenizer(config.TOKENIZER_NAME, add_pad_token_if_missing=True)
 vocab_size = len(tokenizer)
 pad_id = tokenizer.pad_token_id
 
+train_dataset = GSM8KDataset(tokenizer, train_data, max_length=MAX_LENGTH)
+val_dataset = GSM8KDataset(tokenizer, test_data, max_length=MAX_LENGTH)
 
-
-dataset = DecoderOnlyDataset(tokenizer, df, max_length=64)
-
-train_size = int(0.8 * len(dataset))
-val_size = len(dataset) - train_size
-train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-
-train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=2)
+train_loader = DataLoader(train_dataset, batch_size=config.TRAIN_BATCH_SIZE, shuffle=True, num_workers=config.NUM_WORKERS)
+val_loader = DataLoader(val_dataset, batch_size=config.VAL_BATCH_SIZE, num_workers=config.NUM_WORKERS)
 
 # ---------------- Lightning Model ----------------
-
-
 model = DecoderOnlyMoEModel(
     vocab_size=vocab_size,
-    d_model=256,          # smaller d_model for demo
-    max_positions=64,
-    num_layers=4,
-    num_heads=4,
-    d_ff=512,
+    d_model=config.D_MODEL,
+    max_positions=MAX_LENGTH,
+    num_layers=config.NUM_LAYERS,
+    num_heads=config.NUM_HEADS,
+    d_ff=config.D_FF,
     tokenizer=tokenizer,
-    dropout=0.1,
+    dropout=config.DROPOUT,
     pad_token_id=pad_id,
-    lr=1e-3,
-    num_experts=4,
-    top_k=2
+    lr=config.LEARNING_RATE,
+    num_experts=config.NUM_EXPERTS,
+    top_k=config.TOP_K
 )
 
-
-
 checkpoint_callback = ModelCheckpoint(
-    dirpath = os.path.join(PROJECT_ROOT, 'checkpoints', 'DecoderMoECheckpoints'),
+    dirpath = config.CHECKPOINTS["moe"],
     filename = 'DecoderMoEBestModel',
     save_top_k = 1,
     verbose = True,
@@ -129,14 +121,12 @@ checkpoint_callback = ModelCheckpoint(
     mode = 'min'
 )
 
-
-
 # ---------------- Trainer ----------------
 trainer = pl.Trainer(
-    max_epochs=100,
+    max_epochs=config.MAX_EPOCHS,
     check_val_every_n_epoch=1,
     devices=-1,
-    accelerator="gpu",  # change to 'gpu' if available
+    accelerator="gpu",
     callbacks=[checkpoint_callback]
 )
 

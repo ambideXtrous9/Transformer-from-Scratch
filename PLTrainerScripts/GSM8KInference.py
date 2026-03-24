@@ -2,6 +2,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+import config
 import glob
 import torch
 from typing import Optional
@@ -89,20 +90,16 @@ def load_latest_checkpoint(checkpoint_dir, vocab_size, tokenizer):
 
 
 if __name__ == "__main__":
-    tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
+    tokenizer = get_tokenizer(config.TOKENIZER_NAME, add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
 
-    model = load_latest_checkpoint(os.path.join(PROJECT_ROOT, 'checkpoints', 'GSM8KCheckpoints'), vocab_size, tokenizer)
+    model = load_latest_checkpoint(config.CHECKPOINTS["gsm8k"], vocab_size, tokenizer)
 
     # Sample GSM8K-style questions
-    questions = [
-        "Janet's ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells every duck egg at the farmers' market daily for $2. How much in dollars does she make every day at the farmers' market?",
-        "A robe takes 2 bolts of blue fiber and half that much white fiber. How many bolts in total does it take?",
-        "Josh decides to try flipping a house. He buys a house for $80,000 and then puts in $50,000 in repairs. This increased the value of the house by 150%. How much profit did he make?",
-    ]
+    questions = config.SAMPLE_QUESTIONS
 
     for q in questions:
-        output = greedy_decode(model, tokenizer, q, max_len=256)
+        output = greedy_decode(model, tokenizer, q, max_len=config.MAX_LENGTH)
         print("\n" + "=" * 60)
         print(f"Question: {q}")
         print(f"\nGenerated Answer:\n{output}")

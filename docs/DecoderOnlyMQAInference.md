@@ -58,15 +58,15 @@ Loads the latest `.ckpt` file from `MQACheckpoints/`.
 
 ## 6. Dry Run Trace
 
-**Prompt**: `"Artificial intelligence is transforming"`
+**Prompt**: `"Question: A store sells apples for $2 each. If you buy 5 apples, how much do you pay?\nAnswer:"`
 
 | Step | Sequence | Next Token | Notes |
 |------|----------|------------|-------|
-| Init | `[BOS, 8001, 9018, 318, 25417]` | — | Tokenized prompt |
-| Iter 1 | `[BOS, 8001, 9018, 318, 25417]` | 262 | "the" |
-| Iter 2 | `[BOS, 8001, 9018, 318, 25417, 262]` | 835 | "way" |
-| Iter 3 | `[BOS, 8001, 9018, 318, 25417, 262, 835]` | EOS | **STOP** |
-| Output | — | — | `"Artificial intelligence is transforming the way"` |
+| Init | `[BOS, 24361, 25, 317, ...]` | — | Tokenized GSM8K-style prompt |
+| Iter 1 | `[BOS, 24361, 25, 317, ...]` | 1639 | "You" |
+| Iter 2 | `[BOS, ..., 1639]` | 1414 | "pay" |
+| Iter 3 | `[BOS, ..., 1414]` | EOS | **STOP** |
+| Output | — | — | `"Question: A store sells apples...\nAnswer: You pay"` |
 
 ## 7. Usage
 

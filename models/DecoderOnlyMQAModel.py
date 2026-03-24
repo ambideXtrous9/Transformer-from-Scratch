@@ -30,7 +30,7 @@ class DecoderBlock(nn.Module):
         self.addnorm1 = AddNorm(d_model, dropout=dropout)
 
         # 2. Feed Forward
-        self.ffn = PositionwiseFeedForward(d_model=d_model, d_ff=d_ff, dropout=dropout, activation="gelu")
+        self.ffn = PositionwiseFeedForward(d_model=d_model, d_ff=d_ff, dropout=dropout, activation="swiglu")
         self.addnorm2 = AddNorm(d_model, dropout=dropout)
 
     def forward(self, x: torch.Tensor, tgt_mask: Optional[torch.Tensor] = None):
@@ -91,6 +91,8 @@ class DecoderOnlyMQAModel(pl.LightningModule):
         # Epoch losses
         self.train_epoch_losses = []
         self.val_epoch_losses = []
+        self.val_nll_sum = 0.0
+        self.val_n_tokens = 0
 
         # Metrics accumulators
         self.generated_texts = []
@@ -138,8 +140,18 @@ class DecoderOnlyMQAModel(pl.LightningModule):
         self.val_epoch_losses.append(loss.detach())
         self.log("val_loss", loss, prog_bar=True)
 
-        # Store loss
-        self.val_epoch_losses.append(loss.detach())
+        # Accumulate token-weighted NLL for proper perplexity
+        # Compute log probabilities and gather correct token probs
+        log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+        mask = (labels != -100)
+        safe_labels = labels.clone()
+        safe_labels[~mask] = 0
+        target_log_probs = log_probs.gather(dim=-1, index=safe_labels.unsqueeze(-1)).squeeze(-1)
+        target_log_probs = target_log_probs * mask.float()
+
+        # Accumulate total NLL and token count
+        self.val_nll_sum += -target_log_probs.sum().item()
+        self.val_n_tokens += mask.sum().item()
 
         # Decode predictions & references
         preds = torch.argmax(logits, dim=-1)  # greedy decode
@@ -156,9 +168,13 @@ class DecoderOnlyMQAModel(pl.LightningModule):
 
     def on_validation_epoch_end(self):
         avg_loss = torch.stack(self.val_epoch_losses).mean()
+        avg_nll = self.val_nll_sum / max(self.val_n_tokens, 1)
+        perplexity = torch.exp(torch.tensor(avg_nll))
         self.log("val_loss_epoch", avg_loss, prog_bar=True)
+        self.log("val_perplexity", perplexity, prog_bar=True)
         print(f"\n----------------------------------------------\n \
                 Validation loss epoch: {avg_loss.item():.4f}\n \
+                Perplexity: {perplexity.item():.4f}\n \
                 \n----------------------------------------------\n")
 
         # --- Compute Metrics ---
@@ -197,10 +213,13 @@ class DecoderOnlyMQAModel(pl.LightningModule):
             ROUGE-L: {avg_rougeL:.4f}\n \
             METEOR: {avg_meteor:.4f}\n \
             BERTScore-F1: {F1.mean().item():.4f}\n \
+            Perplexity: {perplexity.item():.4f}\n \
             \n----------------------------------------------\n")
 
         # Reset for next epoch
         self.val_epoch_losses = []
+        self.val_nll_sum = 0.0
+        self.val_n_tokens = 0
         self.generated_texts = []
         self.reference_texts = []
 

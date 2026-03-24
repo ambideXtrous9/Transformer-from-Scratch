@@ -23,17 +23,23 @@ pl.seed_everything(42)
 
 # Expert MLP same as yours
 class ExpertMLP(nn.Module):
+    """
+    SwiGLU FFN for each expert.
+    Reference: Shazeer, "GLU Variants Improve Transformer"
+    hidden_dim = 2/3 * d_ff keeps param count comparable to standard FFN.
+    """
     def __init__(self, d_model, d_ff, dropout=0.1):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(d_model, d_ff),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(d_ff, d_model),
-            nn.Dropout(dropout),
-        )
+        hidden_dim = int(2 * d_ff / 3)
+        self.w1 = nn.Linear(d_model, hidden_dim, bias=False)  # gate projection
+        self.w2 = nn.Linear(d_model, hidden_dim, bias=False)  # data projection
+        self.w3 = nn.Linear(hidden_dim, d_model, bias=False)  # down projection
+        self.dropout = nn.Dropout(dropout)
+
     def forward(self, x):
-        return self.net(x)
+        gate = F.silu(self.w1(x))
+        data = self.w2(x)
+        return self.w3(self.dropout(gate * data))
 
 # Router: returns full probs and topk (indices + probs)
 class TopKRouter(nn.Module):
@@ -184,6 +190,8 @@ class DecoderOnlyMoEModel(pl.LightningModule):
         # tracking and metrics as before
         self.train_epoch_losses = []
         self.val_epoch_losses = []
+        self.val_nll_sum = 0.0
+        self.val_n_tokens = 0
         self.generated_texts = []
         self.reference_texts = []
 
@@ -219,6 +227,19 @@ class DecoderOnlyMoEModel(pl.LightningModule):
         self.val_epoch_losses.append(loss.detach())
         self.log("val_loss", loss, prog_bar=True)
 
+        # Accumulate token-weighted NLL for proper perplexity
+        # Compute log probabilities and gather correct token probs
+        log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+        mask = (labels != -100)
+        safe_labels = labels.clone()
+        safe_labels[~mask] = 0
+        target_log_probs = log_probs.gather(dim=-1, index=safe_labels.unsqueeze(-1)).squeeze(-1)
+        target_log_probs = target_log_probs * mask.float()
+
+        # Accumulate total NLL and token count
+        self.val_nll_sum += -target_log_probs.sum().item()
+        self.val_n_tokens += mask.sum().item()
+
         # Optional: gather generated / reference text for metrics
         preds = torch.argmax(logits, dim=-1)
         pred_texts = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
@@ -233,9 +254,13 @@ class DecoderOnlyMoEModel(pl.LightningModule):
 
     def on_validation_epoch_end(self):
         avg_loss = torch.stack(self.val_epoch_losses).mean()
+        avg_nll = self.val_nll_sum / max(self.val_n_tokens, 1)
+        perplexity = torch.exp(torch.tensor(avg_nll))
         self.log("val_loss_epoch", avg_loss, prog_bar=True)
+        self.log("val_perplexity", perplexity, prog_bar=True)
         print(f"\n----------------------------------------------\n \
                 Validation loss epoch: {avg_loss.item():.4f}\n \
+                Perplexity: {perplexity.item():.4f}\n \
                 \n----------------------------------------------\n")
 
         # Compute metrics like BLEU, ROUGE, etc., using same pattern as before
@@ -275,10 +300,13 @@ class DecoderOnlyMoEModel(pl.LightningModule):
             ROUGE-L: {avg_rougeL:.4f}\n \
             METEOR: {avg_meteor:.4f}\n \
             BERTScore-F1: {F1.mean().item():.4f}\n \
+            Perplexity: {perplexity.item():.4f}\n \
             \n----------------------------------------------\n")
 
         # Reset accumulators
         self.val_epoch_losses = []
+        self.val_nll_sum = 0.0
+        self.val_n_tokens = 0
         self.generated_texts = []
         self.reference_texts = []
 

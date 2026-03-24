@@ -7,7 +7,7 @@ The `CrossAttentionSeq2SeqModel` module implements a complete **Encoder-Decoder 
 ### Key Features
 -   **Encoder-Decoder Structure**: Uses a bidirectional Encoder and an autoregressive Decoder.
 -   **Cross-Attention**: The Decoder attends to the Encoder's output to generate the target sequence.
--   **Metric Integration**: Built-in support for calculating BLEU, ROUGE, METEOR, and BERTScore during validation.
+-   **Metric Integration**: Built-in support for calculating BLEU, ROUGE, METEOR, BERTScore, and Perplexity during validation.
 -   **Greedy Decoding**: Implements a simple greedy decoding strategy for validation.
 
 ## 2. Modules Involved

@@ -9,8 +9,9 @@ from core.Embedding import get_tokenizer
 from models.DecoderOnlySeq2SeqModel import DecoderOnlyModel
 from pytorch_lightning.callbacks import ModelCheckpoint
 from datasets import load_dataset
+import config
 
-pl.seed_everything(42)
+pl.seed_everything(config.SEED)
 
 
 # ==================== Model Subclass (no BERTScore) ====================
@@ -116,7 +117,7 @@ class GSM8KDataset(Dataset):
 if __name__ == "__main__":
     # ==================== Load GSM8K Dataset ====================
     print("Loading GSM8K dataset from HuggingFace...")
-    gsm8k = load_dataset("openai/gsm8k", "main")
+    gsm8k = load_dataset(config.DATASET_NAME, config.DATASET_CONFIG)
 
     train_data = gsm8k["train"]
     test_data = gsm8k["test"]
@@ -127,17 +128,17 @@ if __name__ == "__main__":
     print(f"\nSample answer:\n{train_data[0]['answer']}")
 
     # ==================== Setup ====================
-    tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
+    tokenizer = get_tokenizer(config.TOKENIZER_NAME, add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
     pad_id = tokenizer.pad_token_id
 
-    MAX_LENGTH = 256
+    MAX_LENGTH = config.MAX_LENGTH
 
     train_dataset = GSM8KDataset(tokenizer, train_data, max_length=MAX_LENGTH)
     val_dataset = GSM8KDataset(tokenizer, test_data, max_length=MAX_LENGTH)
 
-    train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True, num_workers=2)
-    val_loader = DataLoader(val_dataset, batch_size=2, num_workers=2)
+    train_loader = DataLoader(train_dataset, batch_size=config.TRAIN_BATCH_SIZE, shuffle=True, num_workers=config.NUM_WORKERS)
+    val_loader = DataLoader(val_dataset, batch_size=config.VAL_BATCH_SIZE, num_workers=config.NUM_WORKERS)
 
     print(f"\nTrain batches: {len(train_loader)}")
     print(f"Val batches:   {len(val_loader)}")
@@ -145,22 +146,22 @@ if __name__ == "__main__":
     # ==================== Model ====================
     model = GSM8KModel(
         vocab_size=vocab_size,
-        d_model=256,
+        d_model=config.D_MODEL,
         max_positions=MAX_LENGTH,
-        num_layers=4,
-        num_heads=4,
-        d_ff=512,
+        num_layers=config.NUM_LAYERS,
+        num_heads=config.NUM_HEADS,
+        d_ff=config.D_FF,
         tokenizer=tokenizer,
-        dropout=0.1,
+        dropout=config.DROPOUT,
         pad_token_id=pad_id,
-        lr=1e-3
+        lr=config.LEARNING_RATE
     )
 
     print(f"\nModel parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # ==================== Checkpointing ====================
     checkpoint_callback = ModelCheckpoint(
-        dirpath=os.path.join(PROJECT_ROOT, 'checkpoints', 'GSM8KCheckpoints'),
+        dirpath=config.CHECKPOINTS["gsm8k"],
         filename='GSM8K-DecoderOnly-{epoch:02d}-{val_loss_epoch:.4f}',
         save_top_k=1,
         verbose=True,
@@ -170,7 +171,7 @@ if __name__ == "__main__":
 
     # ==================== Trainer ====================
     trainer = pl.Trainer(
-        max_epochs=100,
+        max_epochs=config.MAX_EPOCHS,
         check_val_every_n_epoch=1,
         devices=-1,
         accelerator="gpu",

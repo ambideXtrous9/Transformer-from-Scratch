@@ -25,7 +25,7 @@ class DecoderBlock(LightningModule):
         self.addnorm2 = AddNorm(d_model, dropout=dropout)
 
         # 3. Feed Forward
-        self.ffn = PositionwiseFeedForward(d_model=d_model, d_ff=d_ff, dropout=dropout, activation="gelu")
+        self.ffn = PositionwiseFeedForward(d_model=d_model, d_ff=d_ff, dropout=dropout, activation="swiglu")
         self.addnorm3 = AddNorm(d_model, dropout=dropout)
 
     def forward(

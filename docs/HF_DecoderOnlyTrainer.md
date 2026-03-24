@@ -7,7 +7,7 @@ This script trains the custom `DecoderOnlyModel` (standard Multi-Head Attention)
 ## 2. Modules Involved
 
 -   **transformers**: `Trainer`, `TrainingArguments`.
--   **HFTrainerScripts.hf_wrapper**: `HFModelWrapper`, `SaveBestModelCallback`.
+-   **HFTrainerScripts.hf_wrapper**: `HFModelWrapper`, `SaveBestModelCallback`, `make_compute_perplexity`.
 
 ### Dependencies
 -   `Embedding.py` -> `get_tokenizer`: Provides the tokenizer.
@@ -17,8 +17,7 @@ This script trains the custom `DecoderOnlyModel` (standard Multi-Head Attention)
 
 ```mermaid
 graph TD
-    CSV[versatile_dataset_2000.csv] --> DF[DataFrame]
-    DF --> Dataset[DecoderOnlyDataset]
+    GSM8K[GSM8K openai/gsm8k] --> Dataset[GSM8KDataset]
     Dataset --> Split[80/20 Split]
     Split --> TL[Train Loader]
     Split --> VL[Val Loader]
@@ -38,7 +37,7 @@ graph TD
 | Model interface | Native `LightningModule` | Wrapped in `HFModelWrapper` |
 | Forward output | `(logits, attn_maps)` | `CausalLMOutput(loss, logits, attentions)` |
 | Checkpointing | `ModelCheckpoint(save_top_k=1)` | `SaveBestModelCallback` (single best) |
-| Validation metrics | BLEU, ROUGE, METEOR, BERTScore | eval_loss only |
+| Validation metrics | BLEU, ROUGE, METEOR, BERTScore | Perplexity, eval_loss |
 | Optimizer | `configure_optimizers()` | HF Trainer's built-in AdamW |
 
 ## 5. Configuration
@@ -49,7 +48,7 @@ graph TD
 | num_layers | 4 |
 | num_heads | 4 |
 | d_ff | 512 |
-| max_positions | 64 |
+| max_positions | 256 |
 | num_train_epochs | 100 |
 | batch_size (train) | 4 |
 | batch_size (val) | 2 |
@@ -64,4 +63,4 @@ cd Transformer-from-Scratch
 python HFTrainerScripts/DecoderOnlyTrainer.py
 ```
 
-Requires `versatile_dataset_2000.csv` in `data/`.
+Requires the `datasets` library (GSM8K is loaded via `load_dataset("openai/gsm8k")`).

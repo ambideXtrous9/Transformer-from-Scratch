@@ -106,7 +106,28 @@ epoch=15
 global_step=6000
 ```
 
-## 7. Utility Functions
+## 7. Function: `make_compute_perplexity()`
+
+Returns a `PerplexityCallback` (a `TrainerCallback`) that computes **Perplexity** as `exp(eval_loss)` after each evaluation step.
+
+### Usage
+
+```python
+from HFTrainerScripts.hf_wrapper import make_compute_perplexity
+
+perplexity_callback = make_compute_perplexity()
+trainer = Trainer(model=wrapper, callbacks=[save_callback, perplexity_callback], ...)
+```
+
+### Behavior
+
+| Event | Action |
+|-------|--------|
+| `on_evaluate` | Reads `eval_loss` from metrics, computes `math.exp(eval_loss)`, logs `perplexity` |
+
+The perplexity value is logged alongside other metrics and will appear in training logs as `perplexity`.
+
+## 8. Utility Functions
 
 ### `find_latest_checkpoint(checkpoint_dir) -> str`
 
@@ -121,19 +142,21 @@ Search priority:
 2. Load `model.safetensors` (preferred) or `pytorch_model.bin` (fallback)
 3. `wrapper.load_state_dict(state_dict)`
 
-## 8. Usage
+## 9. Usage
 
 ```python
 from HFTrainerScripts.hf_wrapper import (
     HFModelWrapper,
     SaveBestModelCallback,
+    make_compute_perplexity,
     load_wrapper_from_checkpoint,
 )
 
 # Training
 wrapper = HFModelWrapper(my_custom_model)
-callback = SaveBestModelCallback(save_dir="checkpoints/best")
-trainer = Trainer(model=wrapper, callbacks=[callback], ...)
+save_callback = SaveBestModelCallback(save_dir="checkpoints/best")
+perplexity_callback = make_compute_perplexity()
+trainer = Trainer(model=wrapper, callbacks=[save_callback, perplexity_callback], ...)
 
 # Inference
 wrapper = HFModelWrapper(my_custom_model)

@@ -9,7 +9,7 @@ This script handles the **training pipeline** for the `DecoderOnlyGQAModel` (Gro
 -   **torch**: Tensor operations and data utilities.
 -   **torch.utils.data**: `Dataset`, `DataLoader`, `random_split`.
 -   **pytorch_lightning**: `Trainer`, `ModelCheckpoint`.
--   **pandas**: Reading CSV data.
+-   **datasets**: Loading GSM8K dataset.
 
 ### Dependencies
 -   `Embedding.py` -> `get_tokenizer`: Provides the tokenizer.
@@ -19,8 +19,7 @@ This script handles the **training pipeline** for the `DecoderOnlyGQAModel` (Gro
 
 ```mermaid
 graph TD
-    CSV[versatile_dataset_2000.csv] --> DF[DataFrame]
-    DF --> Dataset[DecoderOnlyDataset]
+    GSM8K[GSM8K openai/gsm8k] --> Dataset[GSM8KDataset]
     Dataset --> Split[80/20 Split]
     Split --> TL[Train Loader]
     Split --> VL[Val Loader]
@@ -31,28 +30,28 @@ graph TD
     CK --> Disk[GQACheckpoints/]
 ```
 
-## 4. Class: `DecoderOnlyDataset`
+## 4. Class: `GSM8KDataset`
 
 ### `__getitem__` Logic Step-by-Step
 
-1.  **Read**: Get `text` and `completion` from row `idx`.
-2.  **Combine**: `full_text = text + " " + completion`.
-3.  **Tokenize**: `tokenizer(full_text, max_length=62, truncation=True)` (reserves 2 for BOS + EOS).
+1.  **Read**: Get `question` and `answer` from GSM8K row `idx`.
+2.  **Combine**: `full_text = question + " " + answer`.
+3.  **Tokenize**: `tokenizer(full_text, max_length=254, truncation=True)` (reserves 2 for BOS + EOS).
 4.  **Input IDs**: `[BOS] + token_ids`, padded to `max_length` with `pad_token_id`.
 5.  **Labels**: `token_ids + [EOS]`, padded with `-100`.
 6.  **Return**: Dict with `input_ids` and `labels`.
 
 ## 5. Dry Run Trace (Single Training Step)
 
-**CSV Row**: `text="Hello"`, `completion="world"`.
+**GSM8K Row**: `question="What is 2+2?"`, `answer="4"`.
 
 | Step | Operation | Shape / Value |
 |------|-----------|---------------|
-| 1 | Combine | `"Hello world"` |
-| 2 | Tokenize | `[15496, 995]` (len=2, no special tokens) |
-| 3 | Input IDs | `[BOS, 15496, 995, PAD, PAD, ...]` (len=64) |
-| 4 | Labels | `[15496, 995, EOS, -100, -100, ...]` (len=64) |
-| 5 | Forward | `logits (1, 64, vocab_size)` |
+| 1 | Combine | `"What is 2+2? 4"` |
+| 2 | Tokenize | `[2061, 318, 362, 10, 17, 30, 604]` (len=7, no special tokens) |
+| 3 | Input IDs | `[BOS, 2061, 318, 362, 10, 17, 30, 604, PAD, ...]` (len=256) |
+| 4 | Labels | `[2061, 318, 362, 10, 17, 30, 604, EOS, -100, ...]` (len=256) |
+| 5 | Forward | `logits (1, 256, vocab_size)` |
 | 6 | Loss | CE between logits and labels (ignoring -100) |
 | 7 | Backward | Compute gradients |
 | 8 | Update | AdamW step |
@@ -66,7 +65,7 @@ graph TD
 | num_heads | 4 |
 | num_kv_heads | 2 |
 | d_ff | 512 |
-| max_positions | 64 |
+| max_positions | 256 |
 | max_epochs | 100 |
 | batch_size (train) | 4 |
 | batch_size (val) | 2 |
@@ -78,4 +77,4 @@ graph TD
 cd GQA && python DecoderOnlyGQATrainer.py
 ```
 
-Requires `versatile_dataset_2000.csv` in the parent directory (loaded via `os.path.join`).
+Requires the `datasets` library (GSM8K is loaded via `load_dataset("openai/gsm8k")`). Metrics: eval_loss, Perplexity.

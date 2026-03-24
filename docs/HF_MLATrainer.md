@@ -6,13 +6,13 @@ This script trains the custom `DecoderOnlyMLAModel` (Multi-Head Latent Attention
 
 ## 2. Dependencies
 -   `DecoderOnlyMLAModel.py` -> `DecoderOnlyMLAModel`: The MLA model.
--   `HFTrainerScripts.hf_wrapper` -> `HFModelWrapper`, `SaveBestModelCallback`.
+-   `HFTrainerScripts.hf_wrapper` -> `HFModelWrapper`, `SaveBestModelCallback`, `make_compute_perplexity`.
 
 ## 3. Architecture
 
 ```mermaid
 graph TD
-    CSV[versatile_dataset_2000.csv] --> Dataset[DecoderOnlyDataset]
+    GSM8K[GSM8K openai/gsm8k] --> Dataset[GSM8KDataset]
     Dataset --> Split[80/20 Split]
     Split --> HFTrainer[HF Trainer]
     Model[DecoderOnlyMLAModel] --> Wrapper[HFModelWrapper]
@@ -50,7 +50,7 @@ Multi-Head Latent Attention compresses KV into a low-rank latent space before pr
 | num_heads | 4 |
 | d_compress | 64 |
 | d_ff | 512 |
-| max_positions | 64 |
+| max_positions | 256 |
 | num_train_epochs | 100 |
 | learning_rate | 1e-3 |
 

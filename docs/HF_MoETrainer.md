@@ -6,13 +6,13 @@ This script trains the custom `DecoderOnlyMoEModel` (Mixture of Experts) using t
 
 ## 2. Dependencies
 -   `DecoderMoE.py` -> `DecoderOnlyMoEModel`: The MoE model.
--   `HFTrainerScripts.hf_wrapper` -> `HFModelWrapper`, `SaveBestModelCallback`.
+-   `HFTrainerScripts.hf_wrapper` -> `HFModelWrapper`, `SaveBestModelCallback`, `make_compute_perplexity`.
 
 ## 3. Architecture
 
 ```mermaid
 graph TD
-    CSV[versatile_dataset_2000.csv] --> Dataset[DecoderOnlyDataset]
+    GSM8K[GSM8K openai/gsm8k] --> Dataset[GSM8KDataset]
     Dataset --> Split[80/20 Split]
     Split --> HFTrainer[HF Trainer]
     Model[DecoderOnlyMoEModel] --> Wrapper[HFModelWrapper]
@@ -34,7 +34,7 @@ The Mixture of Experts model replaces the standard FFN with a set of expert MLPs
 ### MoE Components
 | Component | Description |
 |-----------|-------------|
-| `ExpertMLP` | `Linear -> GELU -> Dropout -> Linear -> Dropout` |
+| `ExpertMLP` | `Linear -> SwiGLU -> Dropout -> Linear -> Dropout` |
 | `TopKRouter` | `Linear(d_model, num_experts) -> Softmax -> TopK` |
 | `MoEFeedForward` | Routes tokens to selected experts, weighted combination |
 
@@ -48,7 +48,7 @@ The Mixture of Experts model replaces the standard FFN with a set of expert MLPs
 | d_ff | 512 |
 | num_experts | 4 |
 | top_k | 2 |
-| max_positions | 64 |
+| max_positions | 256 |
 | num_train_epochs | 100 |
 | learning_rate | 1e-3 |
 

@@ -1,7 +1,5 @@
 """
-HF Trainer Inference — Decoder-Only (MHA)
-
-Original: TrainerScripts/DecoderOnlyInference.py
+HF Trainer Inference — Decoder-Only (MHA) on GSM8K
 """
 
 import sys, os
@@ -9,24 +7,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 import torch
+import config
 
 from core.Embedding import get_tokenizer
 from models.DecoderOnlySeq2SeqModel import DecoderOnlyModel
-from HFTrainerScripts.hf_wrapper import HFModelWrapper, load_wrapper_from_checkpoint
+from HFTrainerScripts.hf_wrapper import HFModelWrapper, load_wrapper_from_checkpoint, compute_batch_perplexity
 
-CHECKPOINT_DIR = os.path.join(PROJECT_ROOT, "checkpoints", "HF_DecoderOnlyCheckpoints")
-MAX_LENGTH = 64
+CHECKPOINT_DIR = config.CHECKPOINTS["hf_decoder_only"]
+MAX_LENGTH = config.MAX_LENGTH
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def load_model(checkpoint_dir=CHECKPOINT_DIR):
-    tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
+    tokenizer = get_tokenizer(config.TOKENIZER_NAME, add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
 
     base_model = DecoderOnlyModel(
-        vocab_size=vocab_size, d_model=256, max_positions=MAX_LENGTH,
-        num_layers=4, num_heads=4, d_ff=512, tokenizer=tokenizer,
-        dropout=0.1, pad_token_id=tokenizer.pad_token_id, lr=1e-3,
+        vocab_size=vocab_size, d_model=config.D_MODEL, max_positions=MAX_LENGTH,
+        num_layers=config.NUM_LAYERS, num_heads=config.NUM_HEADS, d_ff=config.D_FF, tokenizer=tokenizer,
+        dropout=config.DROPOUT, pad_token_id=tokenizer.pad_token_id, lr=config.LEARNING_RATE,
     )
     wrapper = HFModelWrapper(base_model)
     model = load_wrapper_from_checkpoint(wrapper, checkpoint_dir)
@@ -35,10 +34,11 @@ def load_model(checkpoint_dir=CHECKPOINT_DIR):
     return model, tokenizer
 
 
-def greedy_decode(model, tokenizer, prompt, max_len=100):
+def greedy_decode(model, tokenizer, question, max_len=256):
     bos_id = tokenizer.bos_token_id
     eos_id = tokenizer.eos_token_id
 
+    prompt = f"Question: {question}\nAnswer:"
     enc = tokenizer(prompt, truncation=True, max_length=max_len - 1, return_tensors="pt")
     input_ids = enc["input_ids"].to(DEVICE)
 
@@ -52,15 +52,21 @@ def greedy_decode(model, tokenizer, prompt, max_len=100):
 if __name__ == "__main__":
     model, tokenizer = load_model()
 
-    prompts = [
-        "Artificial intelligence is transforming",
-        "The rise of renewable energy is changing global markets and Experts predict this shift will redefine economies",
-        "Climate change poses significant challenges such as Researchers have pointed out that this shift is inevitable",
-    ]
+    questions = config.SAMPLE_QUESTIONS
 
-    for prompt in prompts:
-        output = greedy_decode(model, tokenizer, prompt, max_len=100)
-        print("\n----------------------------------------------")
-        print("Input :", prompt)
-        print("Output:", output)
-        print("----------------------------------------------\n")
+    for q in questions:
+        output = greedy_decode(model, tokenizer, q, max_len=MAX_LENGTH)
+        print("\n" + "=" * 60)
+        print(f"Question: {q}")
+        print(f"\nGenerated Answer:\n{output}")
+        print("=" * 60)
+
+    # Evaluate perplexity on sample texts
+    eval_texts = [f"Question: {q}\nAnswer:" for q in questions]
+    ppl_result = compute_batch_perplexity(model, tokenizer, eval_texts, max_length=MAX_LENGTH, device=DEVICE)
+    print("\n" + "=" * 60)
+    print("Perplexity Evaluation")
+    for text, ppl in zip(questions, ppl_result["perplexities"]):
+        print(f"  {text[:60]}... → PPL: {ppl:.2f}")
+    print(f"\n  Mean Perplexity: {ppl_result['mean_perplexity']:.2f}")
+    print("=" * 60)

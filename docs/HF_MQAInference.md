@@ -13,8 +13,8 @@ This script performs **text generation** using a `DecoderOnlyMQAModel` trained w
 ### `load_model(checkpoint_dir)`
 Rebuilds `DecoderOnlyMQAModel` (num_heads=4, single KV head), wraps in `HFModelWrapper`, loads weights from `HF_MQACheckpoints/best/`.
 
-### `greedy_decode(model, tokenizer, prompt, max_len)`
-Tokenizes prompt, prepends BOS, calls `model.generate_greedy()` with sampling controls (temperature=0.8, top_k=50, top_p=0.9, repetition_penalty=1.2).
+### `greedy_decode(model, tokenizer, question, max_len=256)`
+Formats question as GSM8K-style prompt (`"Question: {question}\nAnswer:"`), tokenizes, prepends BOS, calls `model.generate_greedy()` with sampling controls (temperature=0.8, top_k=50, top_p=0.9, repetition_penalty=1.2).
 
 ## 4. Usage
 

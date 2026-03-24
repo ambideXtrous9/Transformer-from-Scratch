@@ -1,7 +1,5 @@
 """
-HF Trainer — Decoder-Only with Group-Query Attention (GQA)
-
-Original: TrainerScripts/DecoderOnlyGQATrainer.py
+HF Trainer — Decoder-Only with Group-Query Attention (GQA) on GSM8K
 """
 
 import sys, os
@@ -9,25 +7,31 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 import torch
-import pandas as pd
 from torch.utils.data import Dataset
 from transformers import Trainer, TrainingArguments
+from datasets import load_dataset
 
 from core.Embedding import get_tokenizer
 from models.DecoderOnlyGQAModel import DecoderOnlyGQAModel
-from HFTrainerScripts.hf_wrapper import HFModelWrapper, SaveBestModelCallback, make_compute_metrics, preprocess_logits_for_metrics
+from HFTrainerScripts.hf_wrapper import HFModelWrapper, SaveBestModelCallback, make_compute_metrics, make_compute_perplexity, preprocess_logits_for_metrics
 
-torch.manual_seed(42)
+import config
 
-MAX_LENGTH = 64
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "checkpoints", "HF_GQACheckpoints")
+torch.manual_seed(config.SEED)
+
+MAX_LENGTH = config.MAX_LENGTH
+OUTPUT_DIR = config.CHECKPOINTS["hf_gqa"]
 
 
-class DecoderOnlyDataset(Dataset):
-    def __init__(self, tokenizer, df, max_length=64):
+class GSM8KDataset(Dataset):
+    def __init__(self, tokenizer, hf_dataset, max_length=256):
         self.tokenizer = tokenizer
-        self.texts = (df["text"] + " " + df["completion"]).tolist()
         self.max_length = max_length
+
+        self.texts = []
+        for sample in hf_dataset:
+            text = f"Question: {sample['question']}\nAnswer: {sample['answer']}"
+            self.texts.append(text)
 
         if tokenizer.bos_token is None:
             tokenizer.add_special_tokens({"bos_token": "<s>"})
@@ -70,22 +74,25 @@ class DecoderOnlyDataset(Dataset):
 
 
 if __name__ == "__main__":
-    tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
+    print("Loading GSM8K dataset from HuggingFace...")
+    gsm8k = load_dataset(config.DATASET_NAME, config.DATASET_CONFIG)
+    train_data = gsm8k["train"]
+    test_data = gsm8k["test"]
+
+    print(f"\nTrain samples: {len(train_data)}")
+    print(f"Test samples:  {len(test_data)}")
+
+    tokenizer = get_tokenizer(config.TOKENIZER_NAME, add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
     pad_id = tokenizer.pad_token_id
 
-    df = pd.read_csv(os.path.join(PROJECT_ROOT, "data", "versatile_dataset_2000.csv"))
-    print(f"\n---------DataFrame shape: {df.shape}---------\n")
-
-    dataset = DecoderOnlyDataset(tokenizer, df, max_length=MAX_LENGTH)
-    train_size = int(0.8 * len(dataset))
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+    train_dataset = GSM8KDataset(tokenizer, train_data, max_length=MAX_LENGTH)
+    val_dataset = GSM8KDataset(tokenizer, test_data, max_length=MAX_LENGTH)
 
     base_model = DecoderOnlyGQAModel(
-        vocab_size=vocab_size, d_model=256, max_positions=MAX_LENGTH,
-        num_layers=4, num_heads=4, num_kv_heads=2, d_ff=512, tokenizer=tokenizer,
-        dropout=0.1, pad_token_id=pad_id, lr=1e-3,
+        vocab_size=vocab_size, d_model=config.D_MODEL, max_positions=MAX_LENGTH,
+        num_layers=config.NUM_LAYERS, num_heads=config.NUM_HEADS, num_kv_heads=config.NUM_KV_HEADS, d_ff=config.D_FF, tokenizer=tokenizer,
+        dropout=config.DROPOUT, pad_token_id=pad_id, lr=config.LEARNING_RATE,
     )
     model = HFModelWrapper(base_model)
 
@@ -95,16 +102,17 @@ if __name__ == "__main__":
 
     training_args = TrainingArguments(
         output_dir=OUTPUT_DIR,
-        num_train_epochs=100,
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=2,
-        learning_rate=1e-3,
-        weight_decay=0.01,
-        logging_steps=50,
+        num_train_epochs=config.MAX_EPOCHS,
+        per_device_train_batch_size=config.TRAIN_BATCH_SIZE,
+        per_device_eval_batch_size=config.VAL_BATCH_SIZE,
+        learning_rate=config.LEARNING_RATE,
+        weight_decay=config.WEIGHT_DECAY,
+        logging_steps=config.LOGGING_STEPS,
         eval_strategy="epoch",
         save_strategy="no",
         fp16=torch.cuda.is_available(),
-        seed=42,
+        dataloader_num_workers=config.NUM_WORKERS,
+        seed=config.SEED,
         remove_unused_columns=False,
     )
 
@@ -113,7 +121,7 @@ if __name__ == "__main__":
         train_dataset=train_dataset, eval_dataset=val_dataset,
         compute_metrics=make_compute_metrics(tokenizer),
         preprocess_logits_for_metrics=preprocess_logits_for_metrics,
-        callbacks=[best_callback],
+        callbacks=[best_callback, make_compute_perplexity()],
     )
 
     print("\n" + "=" * 50)

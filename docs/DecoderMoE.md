@@ -13,7 +13,7 @@ The `DecoderMoE` module implements a **Decoder-Only Transformer** equipped with 
 
 -   **torch**, **torch.nn**, **torch.nn.functional**: PyTorch core.
 -   **pytorch_lightning**: Training framework.
--   **Metrics**: `sacrebleu`, `rouge_score`, `nltk`, `bert_score`.
+-   **Metrics**: `sacrebleu`, `rouge_score`, `nltk`, `bert_score`, Perplexity.
 
 ### Dependencies
 -   `Embedding` (TokenEmbeddingModule)
@@ -54,7 +54,7 @@ graph TD
 ## 4. Class Definitions
 
 ### `class ExpertMLP(nn.Module)`
-A standard feed-forward block: `Linear -> GELU -> Dropout -> Linear -> Dropout`.
+A SwiGLU gated FFN: `Swish(x @ W_gate) * (x @ W_1)`, then project down.
 -   Acts as a single "brain" in the MoE layer.
 
 ### `class TopKRouter(nn.Module)`

@@ -26,8 +26,8 @@
 📚 **Educational** - Clean, well-documented code perfect for learning
 🎨 **Modern Stack** - Uses GPT-2 tokenizer and state-of-the-art practices
 🚀 **Multiple Architectures** - CrossAttention, DecoderOnly, MoE, GQA, MQA, and MLA
-📊 **Comprehensive Metrics** - BLEU, ROUGE, METEOR, and BERTScore evaluation
-🎛️ **Advanced Features** - Mixture of Experts, Group Query Attention, Multi-Query Attention, Multi-Head Latent Attention
+📊 **Comprehensive Metrics** - BLEU, ROUGE, METEOR, BERTScore, and Perplexity evaluation
+🎛️ **Advanced Features** - Mixture of Experts, Group Query Attention, Multi-Query Attention, Multi-Head Latent Attention, SwiGLU FFN
 
 ---
 
@@ -43,7 +43,7 @@
 | **🔀 GroupQueryAttention** | `core/attention/GroupQueryAttention.py` | GQA — grouped KV heads | Tunable KV sharing, reduced KV cache |
 | **⚡ MultiQueryAttention** | `core/attention/MultiQueryAttention.py` | MQA — single shared KV head | Maximum KV cache reduction |
 | **🧬 MultiHeadLatentAttention** | `core/attention/MultiHeadLatentAttention.py` | MLA — compressed latent KV | Low-rank KV compression (DeepSeek-V2) |
-| **🧠 PositionwiseFeedForward** | `core/FFN.py` | Non-linear transformations | GELU activation, configurable dimensions |
+| **🧠 PositionwiseFeedForward** | `core/FFN.py` | Non-linear transformations | SwiGLU (default), GELU, ReLU activations |
 | **➕ AddNorm** | `core/AddNorm.py` | Residual connections + normalization | Layer normalization, dropout, gradient flow |
 
 ### Model Architectures
@@ -112,7 +112,7 @@ python PLTrainerScripts/GSM8KTrainer.py             # GSM8K Math Reasoning
 ```
 
 - Uses PyTorch Lightning `Trainer` with `ModelCheckpoint` callback
-- Computes BLEU, ROUGE, METEOR, BERTScore during validation
+- Computes BLEU, ROUGE, METEOR, BERTScore, and Perplexity during validation
 - Saves best model by `val_loss_epoch`
 
 #### Option B: HuggingFace Trainer (`HFTrainerScripts/`)
@@ -194,24 +194,36 @@ The codebase includes comprehensive evaluation metrics for assessing model perfo
 | **📝 ROUGE-L** | Longest common subsequence | 0-1 | Structural similarity |
 | **☄️ METEOR** | Semantic similarity with synonyms | 0-1 | Meaning preservation |
 | **🧠 BERTScore** | Contextual embedding similarity | 0-1 | Semantic understanding |
+| **📈 Perplexity** | Exponentiated avg negative log-likelihood | 1-∞ (lower = better) | Language modeling quality |
 
 All metrics are automatically computed during training validation steps and logged to the progress bar and TensorBoard logs.
+
+### Perplexity Implementation
+
+Perplexity is computed using **log-softmax with proper token masking** — the gold-standard approach:
+
+```python
+# Per-batch: compute log probs, gather correct tokens, mask padding (-100)
+log_probs = F.log_softmax(logits, dim=-1)
+target_log_probs = log_probs.gather(dim=-1, index=labels.unsqueeze(-1)).squeeze(-1)
+target_log_probs = target_log_probs * mask.float()
+
+# Accumulate across batches, then: PPL = exp(total_NLL / total_tokens)
+```
+
+- **PL models**: Token-weighted NLL accumulated in `validation_step`, perplexity computed in `on_validation_epoch_end`
+- **HF models**: `PerplexityCallback` computes `exp(eval_loss)` after each evaluation; `compute_batch_perplexity()` utility available for inference
 
 ---
 
 ## 📊 Dataset & Task
 
-**Versatile Text Completion Dataset**
-- 📝 **2,000 examples** of diverse text completion pairs
-- 🎯 **Task**: Complete partial sentences with meaningful continuations
-- 📏 **Format**: `"partial sentence..." → "completion text"`
-- 🔄 **Train/Val Split**: 80/20 automatic split
-- 🌍 **Diverse Topics**: Covers multiple domains and contexts
-
-**GSM8K Math Reasoning**
+**GSM8K Math Reasoning** *(used by all trainers)*
 - 🧮 **7,473 training** + **1,319 test** grade school math problems
 - 🎯 **Task**: Solve multi-step arithmetic word problems
 - 📏 **Format**: `"Question: ..." → "Answer: step-by-step solution"`
+- 📦 **Source**: `openai/gsm8k` via HuggingFace `datasets` library
+- 🔧 **Max sequence length**: 256 tokens
 
 ---
 
@@ -227,7 +239,7 @@ All metrics are automatically computed during training validation steps and logg
 | `num_decoder_layers` | 2-6 | Decoder stack depth |
 | `d_ff` | 128-1024 | Feed-forward dimension |
 | `dropout` | 0.1 | Dropout rate |
-| `max_positions` | 32-512 | Maximum sequence length |
+| `max_positions` | 256 | Maximum sequence length |
 | `use_sinusoidal_pos` | True | Use sinusoidal positional encoding |
 
 ### Attention Variant Configuration
@@ -254,7 +266,7 @@ All metrics are automatically computed during training validation steps and logg
 | Feature | PyTorch Lightning (`PLTrainerScripts/`) | HuggingFace Trainer (`HFTrainerScripts/`) |
 |---------|----------------------------------------|-------------------------------------------|
 | **Training loop** | `pl.Trainer` | `transformers.Trainer` |
-| **Validation metrics** | BLEU, ROUGE, METEOR, BERTScore | eval_loss |
+| **Validation metrics** | BLEU, ROUGE, METEOR, BERTScore, Perplexity | BLEU, ROUGE, METEOR, Perplexity |
 | **Checkpointing** | `ModelCheckpoint` callback | `SaveBestModelCallback` (exactly 1 best) |
 | **Inference decoding** | Greedy (argmax) | Sampling (temperature, top-k, top-p, repetition penalty) |
 | **Encoder-Decoder support** | Yes (CrossAttention Seq2Seq) | Decoder-only models only |
@@ -317,9 +329,8 @@ transformer-from-scratch/
 │   ├── GSM8KTrainer.py                      #   GSM8K math reasoning training
 │   └── GSM8KInference.py                    #   GSM8K math reasoning inference
 │
-├── data/                                    # 📊 Datasets
-│   ├── versatile_dataset_2000.csv           #   Main text completion dataset
-│   └── synthetic_text_completion.csv        #   Legacy dataset
+├── data/                                    # 📊 Datasets (GSM8K loaded via HuggingFace)
+│   └── (downloaded automatically by `datasets` library)
 │
 ├── checkpoints/                             # 💾 Model Checkpoints
 │   ├── Seq2SeqCheckpoints/                  #   PL: CrossAttention model
@@ -379,7 +390,7 @@ transformer-from-scratch/
 
 ### Key Features
 
-- **🔧 ExpertMLP** - Individual expert networks with GELU activation
+- **🔧 ExpertMLP** - Individual expert networks with SwiGLU activation
 - **🎯 TopKRouter** - Intelligent routing mechanism for expert selection
 - **⚡ Sparse Computation** - Only activate selected experts per token
 - **📊 Load Balancing** - Automatic expert capacity management
@@ -401,6 +412,29 @@ wrapper = HFModelWrapper(model)
 hf_trainer = Trainer(model=wrapper, args=training_args, ...)
 hf_trainer.train()
 ```
+
+---
+
+## 🧠 SwiGLU Feed-Forward Network
+
+All models use the **SwiGLU** activation (Shazeer, 2020) in their feed-forward layers, matching modern architectures like LLaMA, PaLM, and Mistral:
+
+```python
+# SwiGLU: gate = SiLU(x @ W1) ⊙ (x @ W2), output = gate @ W3
+# hidden_dim = 2/3 * d_ff keeps param count comparable to standard FFN
+hidden_dim = int(2 * d_ff / 3)
+gate = F.silu(self.w1(x))       # gate projection + Swish activation
+data = self.w2(x)               # data projection
+return self.w3(gate * data)     # element-wise multiply + down projection
+```
+
+| Feature | Standard FFN | SwiGLU FFN |
+|---------|-------------|------------|
+| **Projections** | 2 (up + down) | 3 (gate + data + down) |
+| **Activation** | ReLU/GELU | SiLU (Swish) with gating |
+| **Hidden dim** | `d_ff` | `2/3 * d_ff` (param-matched) |
+| **Bias** | Yes | No (`bias=False`) |
+| **Used in** | Original Transformer | LLaMA, PaLM, Mistral |
 
 ---
 
@@ -430,6 +464,7 @@ We welcome contributions! Here's how you can help:
 2. **Shazeer, N.** (2019). "Fast Transformer Decoding: One Write-Head is All You Need." *arXiv*
 3. **Ainslie, J., et al.** (2023). "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints." *EMNLP 2023*
 4. **DeepSeek-AI** (2024). "DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model." *arXiv*
+5. **Shazeer, N.** (2020). "GLU Variants Improve Transformer." *arXiv* — SwiGLU activation used in FFN
 
 ### Resources
 - 📖 [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/)

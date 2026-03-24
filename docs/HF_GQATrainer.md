@@ -7,7 +7,7 @@ This script trains the custom `DecoderOnlyGQAModel` (Group Query Attention) usin
 ## 2. Modules Involved
 
 -   **transformers**: `Trainer`, `TrainingArguments`.
--   **HFTrainerScripts.hf_wrapper**: `HFModelWrapper`, `SaveBestModelCallback`.
+-   **HFTrainerScripts.hf_wrapper**: `HFModelWrapper`, `SaveBestModelCallback`, `make_compute_perplexity`.
 
 ### Dependencies
 -   `Embedding.py` -> `get_tokenizer`: Provides the tokenizer.
@@ -17,8 +17,7 @@ This script trains the custom `DecoderOnlyGQAModel` (Group Query Attention) usin
 
 ```mermaid
 graph TD
-    CSV[versatile_dataset_2000.csv] --> DF[DataFrame]
-    DF --> Dataset[DecoderOnlyDataset]
+    GSM8K[GSM8K openai/gsm8k] --> Dataset[GSM8KDataset]
     Dataset --> Split[80/20 Split]
     Split --> TL[Train Loader]
     Split --> VL[Val Loader]
@@ -49,7 +48,7 @@ Group Query Attention shares KV heads across multiple query heads, reducing KV c
 | num_heads | 4 |
 | num_kv_heads | 2 |
 | d_ff | 512 |
-| max_positions | 64 |
+| max_positions | 256 |
 | num_train_epochs | 100 |
 | batch_size (train) | 4 |
 | batch_size (val) | 2 |
@@ -62,4 +61,4 @@ cd Transformer-from-Scratch
 python HFTrainerScripts/GQATrainer.py
 ```
 
-Requires `versatile_dataset_2000.csv` in `data/`.
+Requires the `datasets` library (GSM8K is loaded via `load_dataset("openai/gsm8k")`).

@@ -26,6 +26,22 @@ graph LR
     Act --> Drop[Dropout]
     Drop --> FC2["Linear 2 \n (d_ff → d_model)"]
     FC2 --> Output["Output \n (B, L, d_model)"]
+
+    Input --> Gate["W_gate \n (d_model → d_ff)"]
+    Input --> Up["W_1 \n (d_model → d_ff)"]
+    Gate --> Swish["Swish"]
+    Swish --> Mul["⊙ (element-wise)"]
+    Up --> Mul
+    Mul --> DropS[Dropout]
+    DropS --> FC2S["Linear 2 \n (d_ff → d_model)"]
+    FC2S --> Output
+
+    style Gate fill:#e6f3ff
+    style Up fill:#e6f3ff
+    style Swish fill:#e6f3ff
+    style Mul fill:#e6f3ff
+    style DropS fill:#e6f3ff
+    style FC2S fill:#e6f3ff
 ```
 
 ### Mathematical Formula
@@ -37,10 +53,11 @@ Where typically $d_{ff} = 4 \times d_{model}$.
 ## 4. Class: `PositionwiseFeedForward`
 
 ### `__init__(self, d_model, d_ff, dropout, activation)`
+-   `activation`: `"relu"`, `"gelu"`, or `"swiglu"`.
 
 -   `self.fc1`: `nn.Linear(d_model, d_ff)`.
 -   `self.fc2`: `nn.Linear(d_ff, d_model)`.
--   `self.activation`: `nn.ReLU()` or `nn.GELU()`.
+-   `self.activation`: `nn.ReLU()`, `nn.GELU()`, or SwiGLU (gated architecture: `Swish(x @ W_gate) * (x @ W_1)` then project down).
 -   `self.dropout`: `nn.Dropout(dropout)`.
 
 ### `forward(self, x) -> torch.Tensor`
@@ -53,7 +70,7 @@ Where typically $d_{ff} = 4 \times d_{model}$.
 
 1.  **Expand**: `fc1` projects from $d_{model}$ to $d_{ff}$ (e.g., 256 → 1024).
     -   This larger space allows the model to learn more complex representations.
-2.  **Activate**: Non-linear activation (GELU is smoother than ReLU and often preferred).
+2.  **Activate**: Non-linear activation (GELU is smoother than ReLU; SwiGLU uses a gated architecture where `Swish(x @ W_gate) * (x @ W_1)` for improved performance).
 3.  **Dropout**: Randomly zeroes elements during training for regularization.
 4.  **Compress**: `fc2` projects back from $d_{ff}$ to $d_{model}$ (1024 → 256).
 
@@ -81,7 +98,7 @@ The intermediate expansion to $d_{ff}$ creates a "bottleneck" architecture. The 
 import torch
 from FFN import PositionwiseFeedForward
 
-ffn = PositionwiseFeedForward(d_model=256, d_ff=1024, activation="gelu")
+ffn = PositionwiseFeedForward(d_model=256, d_ff=1024, activation="swiglu")
 
 x = torch.randn(2, 10, 256)  # Batch=2, Seq=10
 output = ffn(x)

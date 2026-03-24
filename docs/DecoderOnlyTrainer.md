@@ -9,7 +9,7 @@ This script handles the **training pipeline** for the standard `DecoderOnlyModel
 -   **torch**: Tensor operations and data utilities.
 -   **torch.utils.data**: `Dataset`, `DataLoader`, `random_split`.
 -   **pytorch_lightning**: `Trainer`, `ModelCheckpoint`.
--   **pandas**: Reading CSV data.
+-   **datasets**: Loading GSM8K dataset.
 
 ### Dependencies
 -   `Embedding.py` → `get_tokenizer`: Provides the tokenizer.
@@ -19,8 +19,7 @@ This script handles the **training pipeline** for the standard `DecoderOnlyModel
 
 ```mermaid
 graph TD
-    CSV[synthetic_text_completion.csv] --> DF[DataFrame]
-    DF --> Dataset[DecoderOnlyDataset]
+    GSM8K[GSM8K openai/gsm8k] --> Dataset[GSM8KDataset]
     Dataset --> Split[80/20 Split]
     Split --> TL[Train Loader]
     Split --> VL[Val Loader]
@@ -31,26 +30,26 @@ graph TD
     CK --> Disk[DecoderOnlyCheckpoints/]
 ```
 
-## 4. Class: `DecoderOnlyDataset`
+## 4. Class: `GSM8KDataset`
 
 ### `__getitem__` Logic Step-by-Step
 
-1.  **Read**: Get `text` and `completion` from row `idx`.
-2.  **Combine**: `full_text = text + " " + completion`.
-3.  **Tokenize**: `tokenizer(full_text, max_length=32, padding="max_length")`.
+1.  **Read**: Get `question` and `answer` from GSM8K row `idx`.
+2.  **Combine**: `full_text = question + " " + answer`.
+3.  **Tokenize**: `tokenizer(full_text, max_length=256, padding="max_length")`.
 4.  **Labels**: Copy `input_ids`, set padded positions to `-100`.
 5.  **Return**: Dict with `input_ids` and `labels`.
 
 ## 5. Dry Run Trace (Single Training Step)
 
-**CSV Row**: `text="Hello"`, `completion="world"`.
+**GSM8K Row**: `question="What is 2+2?"`, `answer="4"`.
 
 | Step | Operation | Shape / Value |
 |------|-----------|---------------|
-| 1 | Combine | `"Hello world"` |
-| 2 | Tokenize | `[15496, 995, PAD, PAD, ...]` (len=32) |
-| 3 | Labels | `[15496, 995, -100, -100, ...]` |
-| 4 | Forward | `logits (1, 32, vocab_size)` |
+| 1 | Combine | `"What is 2+2? 4"` |
+| 2 | Tokenize | `[2061, 318, 362, 10, 17, 30, 604, PAD, ...]` (len=256) |
+| 3 | Labels | `[2061, 318, 362, 10, 17, 30, 604, -100, ...]` |
+| 4 | Forward | `logits (1, 256, vocab_size)` |
 | 5 | Loss | CE between logits and labels (ignoring -100) |
 | 6 | Backward | Compute gradients |
 | 7 | Update | AdamW step |
@@ -73,4 +72,4 @@ graph TD
 python DecoderOnlyTrainer.py
 ```
 
-Requires `synthetic_text_completion.csv`.
+Requires the `datasets` library (GSM8K is loaded via `load_dataset("openai/gsm8k")`). Metrics: eval_loss, Perplexity.

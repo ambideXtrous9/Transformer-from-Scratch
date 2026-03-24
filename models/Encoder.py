@@ -19,7 +19,7 @@ class EncoderBlock(LightningModule):
         super().__init__()
         self.mhsa = MultiHeadSelfAttention(d_model=d_model, num_heads=num_heads, dropout=dropout, causal=False)
         self.addnorm1 = AddNorm(d_model, dropout=dropout)
-        self.ffn = PositionwiseFeedForward(d_model=d_model, d_ff=d_ff, dropout=dropout, activation="gelu")
+        self.ffn = PositionwiseFeedForward(d_model=d_model, d_ff=d_ff, dropout=dropout, activation="swiglu")
         self.addnorm2 = AddNorm(d_model, dropout=dropout)
 
     def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None):

@@ -6,13 +6,13 @@ This script trains the custom `DecoderOnlyMQAModel` (Multi-Query Attention) usin
 
 ## 2. Dependencies
 -   `DecoderOnlyMQAModel.py` -> `DecoderOnlyMQAModel`: The MQA model.
--   `HFTrainerScripts.hf_wrapper` -> `HFModelWrapper`, `SaveBestModelCallback`.
+-   `HFTrainerScripts.hf_wrapper` -> `HFModelWrapper`, `SaveBestModelCallback`, `make_compute_perplexity`.
 
 ## 3. Architecture
 
 ```mermaid
 graph TD
-    CSV[versatile_dataset_2000.csv] --> Dataset[DecoderOnlyDataset]
+    GSM8K[GSM8K openai/gsm8k] --> Dataset[GSM8KDataset]
     Dataset --> Split[80/20 Split]
     Split --> HFTrainer[HF Trainer]
     Model[DecoderOnlyMQAModel] --> Wrapper[HFModelWrapper]
@@ -39,7 +39,7 @@ Multi-Query Attention uses a **single shared KV head** across all query heads, p
 | num_layers | 4 |
 | num_heads | 4 |
 | d_ff | 512 |
-| max_positions | 64 |
+| max_positions | 256 |
 | num_train_epochs | 100 |
 | learning_rate | 1e-3 |
 

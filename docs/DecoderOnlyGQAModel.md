@@ -8,7 +8,7 @@ The `DecoderOnlyGQAModel` module implements a **GPT-style Decoder-Only Transform
 
 -   **torch**, **torch.nn**: Core PyTorch and neural network layers.
 -   **pytorch_lightning**: LightningModule training framework.
--   **Metrics**: `sacrebleu`, `rouge_score`, `nltk`, `bert_score`.
+-   **Metrics**: `sacrebleu`, `rouge_score`, `nltk`, `bert_score`, Perplexity.
 
 ### Dependencies
 -   `Embedding.py` -> `TokenEmbeddingModule`: Token and positional embeddings.
@@ -77,7 +77,7 @@ The complete model.
         -   Apply causal mask (lower triangular).
         -   Output: attention-weighted values.
     -   **Add & Norm**: `x = LayerNorm(x + Dropout(attn_out))`.
-    -   **FFN**: `Linear(d_model -> d_ff) -> GELU -> Linear(d_ff -> d_model)`.
+    -   **FFN**: SwiGLU gated FFN (Swish gate).
     -   **Add & Norm**: `x = LayerNorm(x + Dropout(ffn_out))`.
 
 3.  **Final Norm**: `x = LayerNorm(x)`.
@@ -110,7 +110,7 @@ Here `d_k = d_model / num_heads = 4 / 4 = 1`, and each KV head is shared by `num
 | AddNorm1 | `(1, 3, 4)` | Residual + LayerNorm |
 | **Block 1 - FFN** | | |
 | Linear1 | `(1, 3, 16)` | d_model -> d_ff |
-| GELU | `(1, 3, 16)` | Activation |
+| SwiGLU/Swish | `(1, 3, 16)` | Activation |
 | Linear2 | `(1, 3, 4)` | d_ff -> d_model |
 | AddNorm2 | `(1, 3, 4)` | Residual + LayerNorm |
 | **Final** | | |

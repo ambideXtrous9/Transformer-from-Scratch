@@ -9,7 +9,7 @@ This script orchestrates the **training pipeline** for the **Encoder-Decoder (Se
 -   **torch**: Tensor operations and data utilities.
 -   **torch.utils.data**: `Dataset`, `DataLoader`, `random_split`.
 -   **pytorch_lightning**: `Trainer`, `ModelCheckpoint`, `seed_everything`.
--   **pandas**: Reading CSV data.
+-   **datasets**: Loading GSM8K dataset.
 
 ### Dependencies
 -   `Embedding.py` → `get_tokenizer`: Provides the tokenizer.
@@ -19,12 +19,11 @@ This script orchestrates the **training pipeline** for the **Encoder-Decoder (Se
 
 ```mermaid
 graph TD
-    CSV[versatile_dataset_2000.csv] --> DF[DataFrame]
-    DF --> Dataset[Seq2SeqDataset]
+    GSM8K[GSM8K openai/gsm8k] --> Dataset[Seq2SeqDataset]
     
     subgraph "Seq2SeqDataset.__getitem__"
-        Text[text column] --> SrcTok[Tokenize Source]
-        Completion[completion column] --> TgtTok[Tokenize Target]
+        Text[question field] --> SrcTok[Tokenize Source]
+        Completion[answer field] --> TgtTok[Tokenize Target]
         SrcTok --> SrcIDs[src_ids + src_mask]
         TgtTok --> DecIn["Decoder Input: [BOS] + target"]
         TgtTok --> Labels["Labels: target + [EOS]"]
@@ -46,7 +45,7 @@ Prepares paired source-target data for encoder-decoder training.
 
 ### `__getitem__` Step-by-Step
 
-1.  **Read row**: Get `text` (source) and `completion` (target).
+1.  **Read row**: Get `question` (source) and `answer` (target) from GSM8K.
 
 2.  **Encode Source** (for Encoder):
     -   Tokenize with padding to `max_length`.
@@ -77,11 +76,11 @@ At each position, the model predicts the **next** token. This is the standard te
 
 ## 5. Dry Run Trace
 
-**CSV Row**: `text="Hello"`, `completion="World is great"`.
+**GSM8K Row**: `question="Hello"`, `answer="World is great"`.
 
 | Step | Operation | Result |
 |------|-----------|--------|
-| 1 | Tokenize Source | `src_ids = [15496, PAD, PAD, ...]` (padded to 32) |
+| 1 | Tokenize Source | `src_ids = [15496, PAD, PAD, ...]` (padded to 256) |
 | | | `src_mask = [1, 0, 0, ...]` |
 | 2 | Tokenize Target | `raw = [10603, 318, 1049]` ("World is great") |
 | 3 | Decoder Input | `tgt_ids = [BOS, 10603, 318, 1049, PAD, ...]` |
@@ -111,4 +110,4 @@ At each position, the model predicts the **next** token. This is the standard te
 python Trainer.py
 ```
 
-Requires `versatile_dataset_2000.csv`. Best model saved to `CrossAttentionSeq2SeqCheckpoints/`.
+Requires the `datasets` library (GSM8K is loaded via `load_dataset("openai/gsm8k")`). Metrics: eval_loss, Perplexity. Best model saved to `CrossAttentionSeq2SeqCheckpoints/`.

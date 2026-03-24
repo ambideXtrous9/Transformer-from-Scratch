@@ -17,12 +17,14 @@ from datasets import load_dataset
 
 from core.Embedding import get_tokenizer
 from models.DecoderOnlySeq2SeqModel import DecoderOnlyModel
-from HFTrainerScripts.hf_wrapper import HFModelWrapper, SaveBestModelCallback, make_compute_metrics, preprocess_logits_for_metrics
+from HFTrainerScripts.hf_wrapper import HFModelWrapper, SaveBestModelCallback, make_compute_metrics, make_compute_perplexity, preprocess_logits_for_metrics
 
-torch.manual_seed(42)
+import config
 
-MAX_LENGTH = 256
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "checkpoints", "HF_GSM8KCheckpoints")
+torch.manual_seed(config.SEED)
+
+MAX_LENGTH = config.MAX_LENGTH
+OUTPUT_DIR = config.CHECKPOINTS["hf_gsm8k"]
 
 
 class GSM8KDataset(Dataset):
@@ -82,7 +84,7 @@ class GSM8KDataset(Dataset):
 
 if __name__ == "__main__":
     print("Loading GSM8K dataset from HuggingFace...")
-    gsm8k = load_dataset("openai/gsm8k", "main")
+    gsm8k = load_dataset(config.DATASET_NAME, config.DATASET_CONFIG)
 
     train_data = gsm8k["train"]
     test_data = gsm8k["test"]
@@ -92,7 +94,7 @@ if __name__ == "__main__":
     print(f"\nSample question:\n{train_data[0]['question']}")
     print(f"\nSample answer:\n{train_data[0]['answer']}")
 
-    tokenizer = get_tokenizer("gpt2", add_pad_token_if_missing=True)
+    tokenizer = get_tokenizer(config.TOKENIZER_NAME, add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
     pad_id = tokenizer.pad_token_id
 
@@ -100,9 +102,9 @@ if __name__ == "__main__":
     val_dataset = GSM8KDataset(tokenizer, test_data, max_length=MAX_LENGTH)
 
     base_model = DecoderOnlyModel(
-        vocab_size=vocab_size, d_model=256, max_positions=MAX_LENGTH,
-        num_layers=4, num_heads=4, d_ff=512, tokenizer=tokenizer,
-        dropout=0.1, pad_token_id=pad_id, lr=1e-3,
+        vocab_size=vocab_size, d_model=config.D_MODEL, max_positions=MAX_LENGTH,
+        num_layers=config.NUM_LAYERS, num_heads=config.NUM_HEADS, d_ff=config.D_FF, tokenizer=tokenizer,
+        dropout=config.DROPOUT, pad_token_id=pad_id, lr=config.LEARNING_RATE,
     )
     model = HFModelWrapper(base_model)
 
@@ -112,17 +114,17 @@ if __name__ == "__main__":
 
     training_args = TrainingArguments(
         output_dir=OUTPUT_DIR,
-        num_train_epochs=100,
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=2,
-        learning_rate=1e-3,
-        weight_decay=0.01,
-        logging_steps=50,
+        num_train_epochs=config.MAX_EPOCHS,
+        per_device_train_batch_size=config.TRAIN_BATCH_SIZE,
+        per_device_eval_batch_size=config.VAL_BATCH_SIZE,
+        learning_rate=config.LEARNING_RATE,
+        weight_decay=config.WEIGHT_DECAY,
+        logging_steps=config.LOGGING_STEPS,
         eval_strategy="epoch",
         save_strategy="no",
         fp16=torch.cuda.is_available(),
-        dataloader_num_workers=2,
-        seed=42,
+        dataloader_num_workers=config.NUM_WORKERS,
+        seed=config.SEED,
         remove_unused_columns=False,
     )
 
@@ -131,7 +133,7 @@ if __name__ == "__main__":
         train_dataset=train_dataset, eval_dataset=val_dataset,
         compute_metrics=make_compute_metrics(tokenizer),
         preprocess_logits_for_metrics=preprocess_logits_for_metrics,
-        callbacks=[best_callback],
+        callbacks=[best_callback, make_compute_perplexity()],
     )
 
     print("\n" + "=" * 50)

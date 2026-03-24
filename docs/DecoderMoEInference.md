@@ -43,7 +43,7 @@ Generates text from a prompt using greedy (argmax) selection.
     -   `model`: A trained `DecoderOnlyMoEModel`.
     -   `tokenizer`: Tokenizer (GPT-2 based).
     -   `prompt` (str): The starting text.
-    -   `max_len` (int): Maximum total sequence length (default: 50).
+    -   `max_len` (int): Maximum total sequence length (default: 256).
     -   `device`: `'cuda'` or `'cpu'`.
     -   `bos_token_id`, `eos_token_id`: Special token IDs.
 
@@ -80,15 +80,15 @@ Finds the most recent `.ckpt` file in the given directory and loads the model.
 
 ## 6. Dry Run Trace
 
-**Scenario**: Prompt = `"AI is"`, `max_len` = 6, `vocab_size` = 100.
+**Scenario**: Prompt = `"Question: Janet's ducks lay 16 eggs per day. She eats three for breakfast every morning. How many does she have left?\nAnswer:"`, `max_len` = 256, `vocab_size` = 50257.
 
 | Step | input_ids | Model Output (last pos argmax) | Action |
 |------|-----------|-------------------------------|--------|
-| Init | `[BOS, 15, 22]` | — | Tokenized "AI is" + BOS |
-| Iter 1 | `[BOS, 15, 22]` | Token 47 | Append → `[BOS, 15, 22, 47]` |
-| Iter 2 | `[BOS, 15, 22, 47]` | Token 83 | Append → `[BOS, 15, 22, 47, 83]` |
-| Iter 3 | `[BOS, 15, 22, 47, 83]` | Token 2 (EOS) | Append → `[BOS, 15, 22, 47, 83, 2]`, **STOP** |
-| Decode | `[BOS, 15, 22, 47, 83, 2]` | — | `"AI is transforming the"` |
+| Init | `[BOS, 24361, 25, ...]` | — | Tokenized GSM8K-style prompt + BOS |
+| Iter 1 | `[BOS, 24361, 25, ...]` | Token 37 | Append → `[..., 37]` |
+| Iter 2 | `[..., 37]` | Token 83 | Append → `[..., 83]` |
+| Iter 3 | `[..., 83]` | Token 2 (EOS) | Append → `[..., 2]`, **STOP** |
+| Decode | `[BOS, 24361, 25, ..., 2]` | — | `"Question: Janet's ducks...\nAnswer: She has 13 left."` |
 
 ## 7. Usage
 

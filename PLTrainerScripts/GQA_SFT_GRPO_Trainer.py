@@ -25,8 +25,12 @@ from core.Embedding import get_tokenizer
 from models.DecoderOnlyGQAModel import DecoderOnlyGQAModel
 from datasets import load_dataset
 import config
+import pytorch_lightning as pl
+from dotenv import load_dotenv
+import wandb
 
 pl.seed_everything(config.SEED)
+load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
 
 MAX_LENGTH = config.MAX_LENGTH
 
@@ -265,6 +269,27 @@ if __name__ == "__main__":
     eos_id = tokenizer.eos_token_id
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    wandb.init(
+        project=config.WANDB_PROJECT,
+        name="GQA-SFT-GRPO",
+        config={
+            "architecture": "GQA-SFT-GRPO",
+            "d_model": config.D_MODEL,
+            "num_layers": config.NUM_LAYERS,
+            "num_heads": config.NUM_HEADS,
+            "num_kv_heads": config.NUM_KV_HEADS,
+            "d_ff": config.D_FF,
+            "dropout": config.DROPOUT,
+            "grpo_lr": config.GRPO_LR,
+            "grpo_beta": config.GRPO_BETA,
+            "grpo_clip_eps": config.GRPO_CLIP_EPS,
+            "grpo_group_size": config.GRPO_GROUP_SIZE,
+            "grpo_epochs": config.GRPO_EPOCHS,
+            "max_length": MAX_LENGTH,
+            "batch_size": config.TRAIN_BATCH_SIZE,
+        }
+    )
+
     # ================================================================
     # GRPO (Group Relative Policy Optimization)
     # Loads a pre-trained GQA checkpoint and fine-tunes with RL.
@@ -423,6 +448,13 @@ if __name__ == "__main__":
                       f"kl={batch_kl_loss.item()/max(n_completions,1):.4f}  "
                       f"avg_reward={avg_reward:.3f}")
 
+            wandb.log({
+                "grpo/policy_loss": batch_policy_loss.item() / max(n_completions, 1),
+                "grpo/kl_loss": batch_kl_loss.item() / max(n_completions, 1),
+                "grpo/avg_reward": avg_reward,
+                "grpo/total_loss": total_loss.item(),
+            }, step=global_step)
+
         # Epoch summary
         if epoch_steps > 0:
             avg_ep_reward = epoch_reward / epoch_steps
@@ -432,6 +464,13 @@ if __name__ == "__main__":
                   f"  Avg KL Loss:     {epoch_kl_loss / epoch_steps:.4f}\n"
                   f"  Avg Reward:      {avg_ep_reward:.4f}\n"
                   f"----------------------------------------------\n")
+
+            wandb.log({
+                "grpo/epoch_avg_policy_loss": epoch_policy_loss / epoch_steps,
+                "grpo/epoch_avg_kl_loss": epoch_kl_loss / epoch_steps,
+                "grpo/epoch_avg_reward": avg_ep_reward,
+                "grpo/epoch": epoch + 1,
+            }, step=global_step)
 
             # Save if best reward so far
             if avg_ep_reward > best_avg_reward:
@@ -450,3 +489,5 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("Training complete — SFT + GRPO")
     print("=" * 60)
+
+    wandb.finish()

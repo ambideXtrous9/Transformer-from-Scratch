@@ -62,6 +62,9 @@ TOP_K_SAMPLING = 50           # top-k for sampling (0 = disabled)
 TOP_P = 0.9                   # nucleus sampling threshold (1.0 = disabled)
 REPETITION_PENALTY = 1.2      # penalise repeated tokens (1.0 = disabled)
 
+# ==================== Weights & Biases ====================
+WANDB_PROJECT = "Transformer-from-Scratch"
+
 # ==================== Checkpoint directories ====================
 import os
 _ROOT = os.path.dirname(os.path.abspath(__file__))

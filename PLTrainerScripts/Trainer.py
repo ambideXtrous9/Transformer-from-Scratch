@@ -10,8 +10,12 @@ from models.CrossAttentionSeq2SeqModel import CrossAttentionSeq2SeqModel
 from pytorch_lightning.callbacks import ModelCheckpoint
 from datasets import load_dataset
 import config
+from dotenv import load_dotenv
+from pytorch_lightning.loggers import WandbLogger
+import wandb
 
 pl.seed_everything(config.SEED)
+load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
 
 MAX_LENGTH = config.MAX_LENGTH
 
@@ -147,13 +151,30 @@ checkpoint_callback = ModelCheckpoint(
 )
 
 # ---------------- Trainer ----------------
+wandb_logger = WandbLogger(project=config.WANDB_PROJECT, name="Seq2Seq-CrossAttention", log_model=False)
+wandb_logger.experiment.config.update({
+    "architecture": "CrossAttention-Seq2Seq",
+    "d_model": config.D_MODEL,
+    "num_encoder_layers": config.NUM_ENCODER_LAYERS,
+    "num_decoder_layers": config.NUM_DECODER_LAYERS,
+    "num_heads": config.NUM_HEADS,
+    "d_ff": config.SEQ2SEQ_D_FF,
+    "dropout": config.DROPOUT,
+    "learning_rate": config.LEARNING_RATE,
+    "max_length": MAX_LENGTH,
+    "batch_size": config.TRAIN_BATCH_SIZE,
+    "max_epochs": config.MAX_EPOCHS,
+})
+
 trainer = pl.Trainer(
     max_epochs=config.MAX_EPOCHS,
     check_val_every_n_epoch=1,
     devices=-1,
     accelerator="gpu",
-    callbacks=[checkpoint_callback]
+    callbacks=[checkpoint_callback],
+    logger=wandb_logger
 )
 
 # ---------------- Run Training ----------------
 trainer.fit(model, train_loader, val_loader)
+wandb.finish()

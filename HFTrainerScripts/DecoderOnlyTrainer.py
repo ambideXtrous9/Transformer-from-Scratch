@@ -18,8 +18,11 @@ from models.DecoderOnlySeq2SeqModel import DecoderOnlyModel
 from HFTrainerScripts.hf_wrapper import HFModelWrapper, SaveBestModelCallback, make_compute_metrics, make_compute_perplexity, preprocess_logits_for_metrics
 
 import config
+from dotenv import load_dotenv
+import wandb
 
 torch.manual_seed(config.SEED)
+load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
 
 # ==================== Configuration ====================
 MAX_LENGTH = config.MAX_LENGTH
@@ -103,6 +106,9 @@ if __name__ == "__main__":
 
     best_callback = SaveBestModelCallback(save_dir=os.path.join(OUTPUT_DIR, "best"))
 
+    os.environ["WANDB_PROJECT"] = config.WANDB_PROJECT
+    os.environ["WANDB_NAME"] = "HF-DecoderOnly-MHA"
+
     training_args = TrainingArguments(
         output_dir=OUTPUT_DIR,
         num_train_epochs=config.MAX_EPOCHS,
@@ -114,6 +120,7 @@ if __name__ == "__main__":
         eval_strategy="steps",
         eval_steps=config.EVAL_STEPS,
         save_strategy="no",
+        report_to="wandb",
         fp16=torch.cuda.is_available(),
         dataloader_num_workers=config.NUM_WORKERS,
         seed=config.SEED,
@@ -140,3 +147,4 @@ if __name__ == "__main__":
     trainer.preprocess_logits_for_metrics = preprocess_logits_for_metrics
     final_metrics = trainer.evaluate()
     print(f"\nFinal Metrics: {final_metrics}")
+    wandb.finish()

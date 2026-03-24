@@ -2,10 +2,9 @@
 
 ## 1. Overview
 
-This script implements a **two-phase training pipeline** for the `DecoderOnlyGQAModel` on GSM8K using the **HuggingFace Trainer** for SFT and a custom GRPO loop for RL:
+This script implements **GRPO (Group Relative Policy Optimization)** for the `DecoderOnlyGQAModel` on GSM8K using a custom RL loop. It loads a pre-trained HF GQA checkpoint, freezes it as the reference policy, and runs GRPO with group-relative advantages and a clipped surrogate objective.
 
--   **Phase 1 — SFT**: HF Trainer supervised fine-tuning with `SaveBestModelCallback`, step-based evaluation, BLEU/ROUGE/METEOR/Perplexity metrics.
--   **Phase 2 — GRPO**: Loads best SFT checkpoint, freezes it as reference policy, runs RL with group-relative advantages and clipped surrogate objective.
+**Prerequisite**: Train a GQA model first with `HFTrainerScripts/GQATrainer.py`
 
 It is the HF equivalent of `PLTrainerScripts/GQA_SFT_GRPO_Trainer.py`.
 
@@ -13,47 +12,28 @@ It is the HF equivalent of `PLTrainerScripts/GQA_SFT_GRPO_Trainer.py`.
 
 ## 2. Dependencies
 -   `DecoderOnlyGQAModel.py` -> `DecoderOnlyGQAModel`
--   `HFTrainerScripts.hf_wrapper` -> `HFModelWrapper`, `SaveBestModelCallback`, `load_wrapper_from_checkpoint`
+-   `HFTrainerScripts.hf_wrapper` -> `HFModelWrapper`, `load_wrapper_from_checkpoint`
 -   `config.py` -> All hyperparameters
+-   Pre-trained checkpoint in `checkpoints/HF_GQACheckpoints/`
 
 ## 3. Architecture
 
 ```mermaid
 graph TD
-    subgraph "Phase 1: SFT via HF Trainer"
-        GSM8K_SFT[GSM8K Q+A] --> HF_Dataset[GSM8KDataset]
-        HF_Dataset --> HF_Trainer[HF Trainer]
-        GQA_Model[DecoderOnlyGQAModel] --> Wrapper[HFModelWrapper]
-        Wrapper --> HF_Trainer
-        HF_Trainer --> SFT_Best[sft_best/model.safetensors]
-    end
-
-    subgraph "Phase 2: GRPO"
-        SFT_Best --> Policy[Policy π_θ]
-        SFT_Best --> Ref[Reference π_ref \n frozen]
-        Questions[GSM8K Questions] --> Prompts[GSM8KPromptDataset]
-        Prompts --> Sample[Sample G Completions]
-        Policy --> Sample
-        Sample --> Reward[Reward: exact number match]
-        Reward --> Advantage[Group-Relative Advantage]
-        Advantage --> Loss[Clipped Surrogate + β*KL]
-        Ref --> Loss
-        Loss --> Update[Update π_θ]
-        Update -.-> Save[grpo_best/model.safetensors]
-    end
+    Ckpt[Pre-trained HF GQA Checkpoint] --> Policy[Policy π_θ]
+    Ckpt --> Ref[Reference π_ref \n frozen]
+    Questions[GSM8K Questions] --> Prompts[GSM8KPromptDataset]
+    Prompts --> Sample[Sample G Completions]
+    Policy --> Sample
+    Sample --> Reward[Reward: exact number match]
+    Reward --> Advantage[Group-Relative Advantage]
+    Advantage --> Loss[Clipped Surrogate + β*KL]
+    Ref --> Loss
+    Loss --> Update[Update π_θ]
+    Update -.-> Save[grpo_best/model.safetensors]
 ```
 
-## 4. Key Differences from PL Version
-
-| Feature | PL Version | HF Version |
-|---------|-----------|------------|
-| SFT training | `pl.Trainer` + `ModelCheckpoint` | HF `Trainer` + `SaveBestModelCallback` |
-| SFT metrics | BLEU, ROUGE, METEOR, BERTScore, PPL | BLEU, ROUGE, METEOR, PPL |
-| SFT eval | Per-epoch | Per-step (`config.EVAL_STEPS`) |
-| GRPO checkpoint format | `.ckpt` | `.safetensors` |
-| Model wrapper | Native LightningModule | `HFModelWrapper` |
-
-## 5. GRPO Algorithm
+## 4. GRPO Algorithm
 
 Same as PL version — for each batch:
 1.  Sample `G=4` completions per question from current policy.
@@ -62,15 +42,18 @@ Same as PL version — for each batch:
 4.  Clipped surrogate loss + KL penalty against frozen reference.
 5.  Gradient step with max-norm clipping.
 
-## 6. Checkpoints
+## 5. Checkpoints
 
-| Phase | Location | Format |
-|-------|----------|--------|
-| SFT best | `HF_GQA_SFT_GRPO_Checkpoints/sft_best/` | `model.safetensors` |
-| GRPO best | `HF_GQA_SFT_GRPO_Checkpoints/grpo_best/` | `model.safetensors` |
+| Location | Format |
+|----------|--------|
+| `HF_GQA_SFT_GRPO_Checkpoints/grpo_best/` | `model.safetensors` |
 
-## 7. Usage
+## 6. Usage
 
 ```bash
+# Step 1: Train base GQA model
+python HFTrainerScripts/GQATrainer.py
+
+# Step 2: Run GRPO
 python HFTrainerScripts/GQA_SFT_GRPO_Trainer.py
 ```

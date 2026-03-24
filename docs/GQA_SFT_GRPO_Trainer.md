@@ -2,10 +2,9 @@
 
 ## 1. Overview
 
-This script implements a **two-phase training pipeline** for the `DecoderOnlyGQAModel` on GSM8K using PyTorch Lightning:
+This script implements **GRPO (Group Relative Policy Optimization)** for the `DecoderOnlyGQAModel` on GSM8K using PyTorch Lightning. It loads a pre-trained GQA checkpoint and fine-tunes it with RL — sampling multiple completions per question, scoring them with a reward function, and updating the policy using a clipped surrogate objective with KL penalty against the frozen reference.
 
--   **Phase 1 — SFT (Supervised Fine-Tuning)**: Standard next-token prediction on question-answer pairs.
--   **Phase 2 — GRPO (Group Relative Policy Optimization)**: Reinforcement learning that samples multiple completions per question, scores them with a reward function, and updates the policy using a clipped surrogate objective with KL penalty against the frozen SFT reference.
+**Prerequisite**: Train a GQA model first with `PLTrainerScripts/DecoderOnlyGQATrainer.py`
 
 **Reference**: DeepSeek-R1 (Shao et al., 2025) — "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning"
 
@@ -13,30 +12,23 @@ This script implements a **two-phase training pipeline** for the `DecoderOnlyGQA
 -   `DecoderOnlyGQAModel.py` -> `DecoderOnlyGQAModel`
 -   `Embedding.py` -> `get_tokenizer`
 -   `config.py` -> Centralized hyperparameters (including GRPO settings)
+-   Pre-trained checkpoint in `checkpoints/GQACheckpoints/`
 
 ## 3. Architecture
 
 ```mermaid
 graph TD
-    subgraph "Phase 1: SFT"
-        GSM8K_SFT[GSM8K Q+A Pairs] --> SFT_Dataset[GSM8KDataset]
-        SFT_Dataset --> PL_Trainer[PL Trainer]
-        PL_Trainer --> SFT_Ckpt[Best SFT Checkpoint]
-    end
-
-    subgraph "Phase 2: GRPO"
-        SFT_Ckpt --> Policy[Policy Model π_θ]
-        SFT_Ckpt --> Ref[Reference Model π_ref \n frozen]
-        GSM8K_Q[GSM8K Questions Only] --> Prompts[GSM8KPromptDataset]
-        Prompts --> Sample[Sample G Completions]
-        Policy --> Sample
-        Sample --> Reward[Reward Function \n exact numerical match]
-        Reward --> Advantage[Group-Relative Advantage \n A = r-mean / std]
-        Advantage --> Loss[Clipped Surrogate + KL Penalty]
-        Ref --> Loss
-        Loss --> Update[Update π_θ]
-        Update --> Policy
-    end
+    Ckpt[Pre-trained GQA Checkpoint] --> Policy[Policy Model π_θ]
+    Ckpt --> Ref[Reference Model π_ref \n frozen]
+    GSM8K_Q[GSM8K Questions Only] --> Prompts[GSM8KPromptDataset]
+    Prompts --> Sample[Sample G Completions]
+    Policy --> Sample
+    Sample --> Reward[Reward Function \n exact numerical match]
+    Reward --> Advantage[Group-Relative Advantage \n A = r-mean / std]
+    Advantage --> Loss[Clipped Surrogate + KL Penalty]
+    Ref --> Loss
+    Loss --> Update[Update π_θ]
+    Update --> Policy
 ```
 
 ## 4. GRPO Algorithm
@@ -67,7 +59,6 @@ def compute_reward(generated_text, reference_text):
 
 | Parameter | Value | Source |
 |-----------|-------|--------|
-| SFT epochs | 5 | `config.SFT_EPOCHS` |
 | GRPO epochs | 10 | `config.GRPO_EPOCHS` |
 | Group size (G) | 4 | `config.GRPO_GROUP_SIZE` |
 | GRPO LR | 1e-5 | `config.GRPO_LR` |
@@ -75,17 +66,14 @@ def compute_reward(generated_text, reference_text):
 | Clip epsilon (ε) | 0.2 | `config.GRPO_CLIP_EPS` |
 | Max new tokens | 128 | `config.GRPO_MAX_NEW_TOKENS` |
 
-## 7. Datasets
-
-| Dataset | Phase | Contents |
-|---------|-------|----------|
-| `GSM8KDataset` | SFT | Full Q+A pairs, `[BOS]+tokens` / `tokens+[EOS]` |
-| `GSM8KPromptDataset` | GRPO | Questions only (prompts) + reference answers for reward |
-
-## 8. Usage
+## 7. Usage
 
 ```bash
+# Step 1: Train base GQA model
+python PLTrainerScripts/DecoderOnlyGQATrainer.py
+
+# Step 2: Run GRPO
 python PLTrainerScripts/GQA_SFT_GRPO_Trainer.py
 ```
 
-Checkpoints saved to `checkpoints/GQA_SFT_GRPO_Checkpoints/`.
+GRPO checkpoints saved to `checkpoints/GQA_SFT_GRPO_Checkpoints/`.

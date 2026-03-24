@@ -123,8 +123,6 @@ if __name__ == "__main__":
     trainer = Trainer(
         model=model, args=training_args,
         train_dataset=train_dataset, eval_dataset=val_dataset,
-        compute_metrics=make_compute_metrics(tokenizer),
-        preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         callbacks=[best_callback, make_compute_perplexity()],
     )
 
@@ -133,3 +131,12 @@ if __name__ == "__main__":
     print("=" * 50 + "\n")
 
     trainer.train()
+
+    # Final evaluation with full metrics (BLEU, ROUGE, METEOR)
+    print("\n" + "=" * 50)
+    print("Final Evaluation — Computing full metrics")
+    print("=" * 50 + "\n")
+    trainer.compute_metrics = make_compute_metrics(tokenizer)
+    trainer.preprocess_logits_for_metrics = preprocess_logits_for_metrics
+    final_metrics = trainer.evaluate()
+    print(f"\nFinal Metrics: {final_metrics}")

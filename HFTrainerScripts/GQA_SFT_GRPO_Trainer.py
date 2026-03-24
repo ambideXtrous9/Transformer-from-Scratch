@@ -1,12 +1,13 @@
 """
-HF Trainer — Two-Phase Training: SFT + GRPO on GSM8K with GQA model.
+HF Trainer — GRPO on GSM8K with GQA model.
 
-Phase 1 (SFT):  Standard HF Trainer supervised fine-tuning on question-answer pairs.
-Phase 2 (GRPO): Group Relative Policy Optimization — for each question, sample G
-                 completions, score them with a reward function (exact-match on the
-                 final numerical answer), compute group-normalised advantages, and
-                 update the policy with a clipped surrogate objective + KL penalty
-                 against the frozen SFT reference.
+Loads a pre-trained HF GQA checkpoint and fine-tunes it with Group Relative Policy
+Optimization (GRPO). For each question, samples G completions, scores them with a
+reward function (exact-match on the final numerical answer), computes group-normalised
+advantages, and updates the policy with a clipped surrogate objective + KL penalty
+against the frozen reference.
+
+Prerequisite: Train a GQA model first with HFTrainerScripts/GQATrainer.py
 
 Reference: DeepSeek-R1 (Shao et al., 2025) — "DeepSeek-R1: Incentivizing Reasoning
            Capability in LLMs via Reinforcement Learning"
@@ -20,15 +21,11 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from transformers import Trainer, TrainingArguments
 from datasets import load_dataset
 
 from core.Embedding import get_tokenizer
 from models.DecoderOnlyGQAModel import DecoderOnlyGQAModel
-from HFTrainerScripts.hf_wrapper import (
-    HFModelWrapper, SaveBestModelCallback,
-    make_compute_metrics, make_compute_perplexity, preprocess_logits_for_metrics,
-)
+from HFTrainerScripts.hf_wrapper import HFModelWrapper
 
 import config
 
@@ -267,65 +264,14 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # ================================================================
-    # PHASE 1 — Supervised Fine-Tuning (SFT) via HF Trainer
+    # GRPO (Group Relative Policy Optimization)
+    # Loads a pre-trained HF GQA checkpoint and fine-tunes with RL.
+    # Train the base model first with HFTrainerScripts/GQATrainer.py
     # ================================================================
     print("\n" + "=" * 60)
-    print("PHASE 1: Supervised Fine-Tuning (SFT) via HF Trainer")
+    print("Group Relative Policy Optimization (GRPO)")
     print("=" * 60 + "\n")
 
-    train_dataset = GSM8KDataset(tokenizer, train_data, max_length=MAX_LENGTH)
-    val_dataset = GSM8KDataset(tokenizer, test_data, max_length=MAX_LENGTH)
-
-    base_model = DecoderOnlyGQAModel(
-        vocab_size=vocab_size, d_model=config.D_MODEL, max_positions=MAX_LENGTH,
-        num_layers=config.NUM_LAYERS, num_heads=config.NUM_HEADS,
-        num_kv_heads=config.NUM_KV_HEADS, d_ff=config.D_FF, tokenizer=tokenizer,
-        dropout=config.DROPOUT, pad_token_id=pad_id, lr=config.LEARNING_RATE,
-    )
-    sft_model = HFModelWrapper(base_model)
-
-    print(f"Total parameters: {sum(p.numel() for p in sft_model.parameters()):,}")
-
-    sft_save_dir = os.path.join(OUTPUT_DIR, "sft_best")
-    best_callback = SaveBestModelCallback(save_dir=sft_save_dir)
-
-    training_args = TrainingArguments(
-        output_dir=OUTPUT_DIR,
-        num_train_epochs=config.SFT_EPOCHS,
-        per_device_train_batch_size=config.TRAIN_BATCH_SIZE,
-        per_device_eval_batch_size=config.VAL_BATCH_SIZE,
-        learning_rate=config.LEARNING_RATE,
-        weight_decay=config.WEIGHT_DECAY,
-        logging_steps=config.LOGGING_STEPS,
-        eval_strategy="steps",
-        eval_steps=config.EVAL_STEPS,
-        save_strategy="no",
-        fp16=torch.cuda.is_available(),
-        dataloader_num_workers=config.NUM_WORKERS,
-        seed=config.SEED,
-        remove_unused_columns=False,
-    )
-
-    sft_trainer = Trainer(
-        model=sft_model, args=training_args,
-        train_dataset=train_dataset, eval_dataset=val_dataset,
-        compute_metrics=make_compute_metrics(tokenizer),
-        preprocess_logits_for_metrics=preprocess_logits_for_metrics,
-        callbacks=[best_callback, make_compute_perplexity()],
-    )
-
-    print("\nStarting SFT training...\n")
-    sft_trainer.train()
-    print("\nSFT phase complete.")
-
-    # ================================================================
-    # PHASE 2 — GRPO (Group Relative Policy Optimization)
-    # ================================================================
-    print("\n" + "=" * 60)
-    print("PHASE 2: Group Relative Policy Optimization (GRPO)")
-    print("=" * 60 + "\n")
-
-    # Load best SFT checkpoint into a fresh wrapper for GRPO
     from HFTrainerScripts.hf_wrapper import load_wrapper_from_checkpoint
 
     grpo_base_model = DecoderOnlyGQAModel(
@@ -336,13 +282,16 @@ if __name__ == "__main__":
     )
     policy_model = HFModelWrapper(grpo_base_model)
 
-    # Try loading SFT best checkpoint
+    # Load pre-trained HF GQA checkpoint
+    ckpt_dir = config.CHECKPOINTS["hf_gqa"]
     try:
-        policy_model = load_wrapper_from_checkpoint(policy_model, OUTPUT_DIR)
-        print("Loaded SFT best checkpoint for GRPO.")
+        policy_model = load_wrapper_from_checkpoint(policy_model, ckpt_dir)
+        print(f"Loaded pre-trained checkpoint from {ckpt_dir}")
     except FileNotFoundError:
-        print("No SFT checkpoint found, continuing with current weights.")
-        policy_model = sft_model
+        raise FileNotFoundError(
+            f"No checkpoint found in {ckpt_dir}. "
+            "Train a GQA model first with: python HFTrainerScripts/GQATrainer.py"
+        )
 
     policy_model = policy_model.to(device)
     policy_model.train()

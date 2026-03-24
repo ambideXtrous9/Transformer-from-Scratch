@@ -14,10 +14,10 @@ TOKENIZER_NAME = "gpt2"
 MAX_LENGTH = 256              # max sequence length for tokenization & positional embeddings
 
 # ==================== Model (shared) ====================
-D_MODEL = 512                 # model / embedding dimension
-NUM_HEADS = 8                 # number of attention heads
+D_MODEL = 256                 # model / embedding dimension
+NUM_HEADS = 4                 # number of attention heads
 NUM_LAYERS = 6                # number of decoder layers
-D_FF = 2048                    # feed-forward inner dimension
+D_FF = 1024                    # feed-forward inner dimension
 DROPOUT = 0.1                 # dropout probability
 
 # ==================== Seq2Seq (CrossAttention) ====================
@@ -40,7 +40,7 @@ SEED = 42
 LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 0.01
 MAX_EPOCHS = 100
-TRAIN_BATCH_SIZE = 4
+TRAIN_BATCH_SIZE = 8
 VAL_BATCH_SIZE = 4
 NUM_WORKERS = 2
 LOGGING_STEPS = 50            # HF Trainer: log every N steps

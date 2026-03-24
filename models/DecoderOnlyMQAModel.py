@@ -153,16 +153,16 @@ class DecoderOnlyMQAModel(pl.LightningModule):
         self.val_nll_sum += -target_log_probs.sum().item()
         self.val_n_tokens += mask.sum().item()
 
-        # Decode predictions & references
-        preds = torch.argmax(logits, dim=-1)  # greedy decode
-        pred_texts = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
-        ref_texts = self.tokenizer.batch_decode(
-            torch.where(labels != -100, labels, self.tokenizer.pad_token_id),
-            skip_special_tokens=True
-        )
-
-        self.generated_texts.extend(pred_texts)
-        self.reference_texts.extend(ref_texts)
+        # Collect texts for full metrics only on the final epoch
+        if self.current_epoch == self.trainer.max_epochs - 1:
+            preds = torch.argmax(logits, dim=-1)
+            pred_texts = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+            ref_texts = self.tokenizer.batch_decode(
+                torch.where(labels != -100, labels, self.tokenizer.pad_token_id),
+                skip_special_tokens=True
+            )
+            self.generated_texts.extend(pred_texts)
+            self.reference_texts.extend(ref_texts)
 
         return loss
 
@@ -177,8 +177,9 @@ class DecoderOnlyMQAModel(pl.LightningModule):
                 Perplexity: {perplexity.item():.4f}\n \
                 \n----------------------------------------------\n")
 
-        # --- Compute Metrics ---
-        if len(self.generated_texts) > 0:
+        # --- Full metrics (BLEU, ROUGE, METEOR, BERTScore) only on the final epoch ---
+        is_final_epoch = self.current_epoch == self.trainer.max_epochs - 1
+        if is_final_epoch and len(self.generated_texts) > 0:
             # BLEU
             bleu = sacrebleu.corpus_bleu(self.generated_texts, [self.reference_texts])
             self.log("val_bleu", bleu.score, prog_bar=True)

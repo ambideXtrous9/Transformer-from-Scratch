@@ -1,18 +1,19 @@
 """
-PyTorch Lightning — Two-Phase Training: SFT + GRPO on GSM8K with GQA model.
+PyTorch Lightning — GRPO on GSM8K with GQA model.
 
-Phase 1 (SFT):  Standard supervised next-token prediction on question-answer pairs.
-Phase 2 (GRPO): Group Relative Policy Optimization — for each question, sample G
-                 completions, score them with a reward function (exact-match on the
-                 final numerical answer), compute group-normalised advantages, and
-                 update the policy with a clipped surrogate objective + KL penalty
-                 against the frozen SFT reference.
+Loads a pre-trained PL GQA checkpoint and fine-tunes it with Group Relative Policy
+Optimization (GRPO). For each question, samples G completions, scores them with a
+reward function (exact-match on the final numerical answer), computes group-normalised
+advantages, and updates the policy with a clipped surrogate objective + KL penalty
+against the frozen reference.
+
+Prerequisite: Train a GQA model first with PLTrainerScripts/DecoderOnlyGQATrainer.py
 
 Reference: DeepSeek-R1 (Shao et al., 2025) — "DeepSeek-R1: Incentivizing Reasoning
            Capability in LLMs via Reinforcement Learning"
 """
 
-import os, sys, re, copy, math
+import os, sys, re, copy
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,10 +21,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-import pytorch_lightning as pl
 from core.Embedding import get_tokenizer
 from models.DecoderOnlyGQAModel import DecoderOnlyGQAModel
-from pytorch_lightning.callbacks import ModelCheckpoint
 from datasets import load_dataset
 import config
 
@@ -267,75 +266,29 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # ================================================================
-    # PHASE 1 — Supervised Fine-Tuning (SFT)
+    # GRPO (Group Relative Policy Optimization)
+    # Loads a pre-trained GQA checkpoint and fine-tunes with RL.
+    # Train the base model first with DecoderOnlyGQATrainer.py
     # ================================================================
     print("\n" + "=" * 60)
-    print("PHASE 1: Supervised Fine-Tuning (SFT)")
+    print("Group Relative Policy Optimization (GRPO)")
     print("=" * 60 + "\n")
 
-    train_dataset = GSM8KDataset(tokenizer, train_data, max_length=MAX_LENGTH)
-    val_dataset = GSM8KDataset(tokenizer, test_data, max_length=MAX_LENGTH)
-
-    train_loader = DataLoader(train_dataset, batch_size=config.TRAIN_BATCH_SIZE,
-                              shuffle=True, num_workers=config.NUM_WORKERS)
-    val_loader = DataLoader(val_dataset, batch_size=config.VAL_BATCH_SIZE,
-                            num_workers=config.NUM_WORKERS)
-
-    model = DecoderOnlyGQAModel(
-        vocab_size=vocab_size,
-        d_model=config.D_MODEL,
-        max_positions=MAX_LENGTH,
-        num_layers=config.NUM_LAYERS,
-        num_heads=config.NUM_HEADS,
-        num_kv_heads=config.NUM_KV_HEADS,
-        d_ff=config.D_FF,
-        tokenizer=tokenizer,
-        dropout=config.DROPOUT,
-        pad_token_id=pad_id,
-        lr=config.LEARNING_RATE
-    )
-
-    sft_ckpt_dir = config.CHECKPOINTS["gqa_sft_grpo"]
-    sft_checkpoint_callback = ModelCheckpoint(
-        dirpath=sft_ckpt_dir,
-        filename='GQA_SFT_BestModel',
-        save_top_k=1,
-        verbose=True,
-        monitor='val_loss_epoch',
-        mode='min'
-    )
-
-    sft_trainer = pl.Trainer(
-        max_epochs=config.SFT_EPOCHS,
-        check_val_every_n_epoch=1,
-        devices=-1,
-        accelerator="gpu",
-        callbacks=[sft_checkpoint_callback]
-    )
-
-    sft_trainer.fit(model, train_loader, val_loader)
-
-    print("\nSFT phase complete.")
-
-    # ================================================================
-    # PHASE 2 — GRPO (Group Relative Policy Optimization)
-    # ================================================================
-    print("\n" + "=" * 60)
-    print("PHASE 2: Group Relative Policy Optimization (GRPO)")
-    print("=" * 60 + "\n")
-
-    # Load best SFT checkpoint as the starting policy
+    # Load pre-trained checkpoint as the starting policy
     import glob as glob_mod
-    ckpt_list = glob_mod.glob(os.path.join(sft_ckpt_dir, "*.ckpt"))
-    if ckpt_list:
-        best_sft_ckpt = max(ckpt_list, key=os.path.getmtime)
-        print(f"Loading SFT checkpoint: {best_sft_ckpt}")
-        policy_model = DecoderOnlyGQAModel.load_from_checkpoint(
-            best_sft_ckpt, vocab_size=vocab_size, tokenizer=tokenizer
+    ckpt_dir = config.CHECKPOINTS["gqa"]
+    ckpt_list = glob_mod.glob(os.path.join(ckpt_dir, "*.ckpt"))
+    if not ckpt_list:
+        raise FileNotFoundError(
+            f"No checkpoint found in {ckpt_dir}. "
+            "Train a GQA model first with: python PLTrainerScripts/DecoderOnlyGQATrainer.py"
         )
-    else:
-        print("No SFT checkpoint found, continuing with current model weights.")
-        policy_model = model
+
+    best_ckpt = max(ckpt_list, key=os.path.getmtime)
+    print(f"Loading pre-trained checkpoint: {best_ckpt}")
+    policy_model = DecoderOnlyGQAModel.load_from_checkpoint(
+        best_ckpt, vocab_size=vocab_size, tokenizer=tokenizer
+    )
 
     policy_model = policy_model.to(device)
     policy_model.train()
@@ -483,7 +436,9 @@ if __name__ == "__main__":
             # Save if best reward so far
             if avg_ep_reward > best_avg_reward:
                 best_avg_reward = avg_ep_reward
-                save_path = os.path.join(sft_ckpt_dir, "GQA_GRPO_BestModel.ckpt")
+                grpo_save_dir = config.CHECKPOINTS["gqa_sft_grpo"]
+                os.makedirs(grpo_save_dir, exist_ok=True)
+                save_path = os.path.join(grpo_save_dir, "GQA_GRPO_BestModel.ckpt")
                 torch.save({
                     "state_dict": policy_model.state_dict(),
                     "hparams": policy_model.hparams,

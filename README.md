@@ -118,7 +118,7 @@ python PLTrainerScripts/GQA_SFT_GRPO_Trainer.py     # SFT + GRPO (RL) with GQA
 ```
 
 - Uses PyTorch Lightning `Trainer` with `ModelCheckpoint` callback
-- Computes BLEU, ROUGE, METEOR, BERTScore, and Perplexity during validation
+- Eval loss + Perplexity at every validation epoch; BLEU, ROUGE, METEOR, BERTScore only on the final epoch
 - Saves best model by `val_loss_epoch`
 
 #### Option B: HuggingFace Trainer (`HFTrainerScripts/`)
@@ -136,6 +136,7 @@ python HFTrainerScripts/GQA_SFT_GRPO_Trainer.py     # SFT + GRPO (RL) with GQA
 ```
 
 - Uses HuggingFace `Trainer` with `SaveBestModelCallback`
+- Eval loss + Perplexity during training steps; BLEU, ROUGE, METEOR computed in a final evaluation after training
 - Saves exactly one checkpoint — the model with the lowest `eval_loss`
 - Generation with temperature, top-k, top-p, and repetition penalty
 
@@ -209,7 +210,7 @@ The codebase includes comprehensive evaluation metrics for assessing model perfo
 | **🧠 BERTScore** | Contextual embedding similarity | 0-1 | Semantic understanding |
 | **📈 Perplexity** | Exponentiated avg negative log-likelihood | 1-∞ (lower = better) | Language modeling quality |
 
-All metrics are automatically computed during training validation steps and logged to the progress bar and TensorBoard logs.
+**Eval loss** and **Perplexity** are computed at every evaluation step during training. The expensive text-generation metrics (**BLEU, ROUGE, METEOR, BERTScore**) are computed only once at the end of training to avoid slowing down the training loop.
 
 ### Perplexity Implementation
 
@@ -279,7 +280,8 @@ target_log_probs = target_log_probs * mask.float()
 | Feature | PyTorch Lightning (`PLTrainerScripts/`) | HuggingFace Trainer (`HFTrainerScripts/`) |
 |---------|----------------------------------------|-------------------------------------------|
 | **Training loop** | `pl.Trainer` | `transformers.Trainer` |
-| **Validation metrics** | BLEU, ROUGE, METEOR, BERTScore, Perplexity | BLEU, ROUGE, METEOR, Perplexity |
+| **Eval-step metrics** | Loss, Perplexity | Loss, Perplexity |
+| **Final-epoch metrics** | + BLEU, ROUGE, METEOR, BERTScore | + BLEU, ROUGE, METEOR |
 | **Checkpointing** | `ModelCheckpoint` callback | `SaveBestModelCallback` (exactly 1 best) |
 | **Inference decoding** | Greedy (argmax) | Sampling (temperature, top-k, top-p, repetition penalty) |
 | **Encoder-Decoder support** | Yes (CrossAttention Seq2Seq) | Decoder-only models only |
@@ -448,12 +450,9 @@ hf_trainer.train()
 
 ## 🏋️ GRPO — Reinforcement Learning for Math Reasoning
 
-The project includes a **two-phase training pipeline** inspired by [DeepSeek-R1](https://arxiv.org/abs/2401.02954):
+The project includes a **GRPO training pipeline** inspired by [DeepSeek-R1](https://arxiv.org/abs/2401.02954). It loads a pre-trained GQA checkpoint and fine-tunes it with RL:
 
-### Phase 1: Supervised Fine-Tuning (SFT)
-Standard next-token prediction on GSM8K question-answer pairs — builds a base policy.
-
-### Phase 2: Group Relative Policy Optimization (GRPO)
+### Group Relative Policy Optimization (GRPO)
 An RL algorithm that improves math reasoning accuracy without a learned reward model:
 
 1. **Sample**: For each question, generate `G` completions from the current policy
@@ -478,16 +477,18 @@ loss = -min(surr1, surr2) + β * KL(π_θ || π_ref)
 | `GRPO_LR` | 1e-5 | Learning rate (smaller than SFT) |
 | `GRPO_BETA` | 0.04 | KL penalty coefficient |
 | `GRPO_CLIP_EPS` | 0.2 | PPO clipping epsilon |
-| `SFT_EPOCHS` | 5 | SFT warmup epochs before GRPO |
+### Prerequisites & Usage
 
-### Usage
+Train a GQA model first, then run GRPO:
 
 ```bash
-# PyTorch Lightning
-python PLTrainerScripts/GQA_SFT_GRPO_Trainer.py
+# Step 1: Train base GQA model (either framework)
+python PLTrainerScripts/DecoderOnlyGQATrainer.py
+python HFTrainerScripts/GQATrainer.py
 
-# HuggingFace Trainer
-python HFTrainerScripts/GQA_SFT_GRPO_Trainer.py
+# Step 2: Run GRPO on the trained checkpoint
+python PLTrainerScripts/GQA_SFT_GRPO_Trainer.py     # loads from GQACheckpoints/
+python HFTrainerScripts/GQA_SFT_GRPO_Trainer.py      # loads from HF_GQACheckpoints/
 ```
 
 ---

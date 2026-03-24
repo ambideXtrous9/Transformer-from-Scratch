@@ -446,6 +446,65 @@ hf_trainer.train()
 
 ---
 
+## 🏋️ GRPO — Reinforcement Learning for Math Reasoning
+
+The project includes a **two-phase training pipeline** inspired by [DeepSeek-R1](https://arxiv.org/abs/2401.02954):
+
+### Phase 1: Supervised Fine-Tuning (SFT)
+Standard next-token prediction on GSM8K question-answer pairs — builds a base policy.
+
+### Phase 2: Group Relative Policy Optimization (GRPO)
+An RL algorithm that improves math reasoning accuracy without a learned reward model:
+
+1. **Sample**: For each question, generate `G` completions from the current policy
+2. **Reward**: Score each completion — `1.0` if final number matches ground truth, `+0.1` bonus for `####` format
+3. **Advantage**: Normalize rewards within each group: `A_j = (r_j - mean) / std`
+4. **Update**: Clipped surrogate objective (PPO-style) + KL penalty against frozen SFT reference
+
+```python
+# GRPO core: clipped surrogate + KL penalty
+ratio = exp(log_π_θ - log_π_ref)
+surr1 = ratio * advantage
+surr2 = clip(ratio, 1-ε, 1+ε) * advantage
+loss = -min(surr1, surr2) + β * KL(π_θ || π_ref)
+```
+
+### GRPO Configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `GRPO_GROUP_SIZE` | 4 | Completions sampled per question |
+| `GRPO_EPOCHS` | 10 | RL training epochs |
+| `GRPO_LR` | 1e-5 | Learning rate (smaller than SFT) |
+| `GRPO_BETA` | 0.04 | KL penalty coefficient |
+| `GRPO_CLIP_EPS` | 0.2 | PPO clipping epsilon |
+| `SFT_EPOCHS` | 5 | SFT warmup epochs before GRPO |
+
+### Usage
+
+```bash
+# PyTorch Lightning
+python PLTrainerScripts/GQA_SFT_GRPO_Trainer.py
+
+# HuggingFace Trainer
+python HFTrainerScripts/GQA_SFT_GRPO_Trainer.py
+```
+
+---
+
+## 🎛️🔀 Hybrid Architectures: MoE + GQA / MoE + MLA
+
+The project includes two hybrid architectures that combine MoE sparse FFN with memory-efficient attention:
+
+| Architecture | Attention | FFN | KV Cache | FFN Capacity |
+|--------------|-----------|-----|----------|-------------|
+| **MoE + GQA** | Grouped KV heads | Sparse MoE | 25% of MHA | 4x (sparse) |
+| **MoE + MLA** | Compressed latent KV | Sparse MoE | ~12.5% of MHA | 4x (sparse) |
+
+These combine the best of both worlds — reduced memory for attention (GQA/MLA) and increased model capacity without proportional compute (MoE).
+
+---
+
 ## 🧠 SwiGLU Feed-Forward Network
 
 All models use the **SwiGLU** activation (Shazeer, 2020) in their feed-forward layers, matching modern architectures like LLaMA, PaLM, and Mistral:
@@ -496,6 +555,7 @@ We welcome contributions! Here's how you can help:
 3. **Ainslie, J., et al.** (2023). "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints." *EMNLP 2023*
 4. **DeepSeek-AI** (2024). "DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model." *arXiv*
 5. **Shazeer, N.** (2020). "GLU Variants Improve Transformer." *arXiv* — SwiGLU activation used in FFN
+6. **Shao, Z., et al.** (2025). "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning." *arXiv* — GRPO algorithm
 
 ### Resources
 - 📖 [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/)

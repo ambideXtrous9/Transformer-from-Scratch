@@ -1,0 +1,296 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import pytorch_lightning as pl
+from typing import Optional
+
+from core.Embedding import TokenEmbeddingModule
+from core.attention.GroupQueryAttention import GroupQueryAttention
+from core.AddNorm import AddNorm
+
+# Metrics
+import sacrebleu
+from rouge_score import rouge_scorer
+from nltk.translate.meteor_score import meteor_score
+import nltk
+nltk.download('wordnet')
+from bert_score import score as bertscore
+
+pl.seed_everything(42)
+
+# Expert MLP (SwiGLU) — reused from DecoderMoE
+class ExpertMLP(nn.Module):
+    """
+    SwiGLU FFN for each expert.
+    hidden_dim = 2/3 * d_ff keeps param count comparable to standard FFN.
+    """
+    def __init__(self, d_model, d_ff, dropout=0.1):
+        super().__init__()
+        hidden_dim = int(2 * d_ff / 3)
+        self.w1 = nn.Linear(d_model, hidden_dim, bias=False)   # gate projection
+        self.w2 = nn.Linear(d_model, hidden_dim, bias=False)   # data projection
+        self.w3 = nn.Linear(hidden_dim, d_model, bias=False)   # down projection
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        gate = F.silu(self.w1(x))
+        data = self.w2(x)
+        return self.w3(self.dropout(gate * data))
+
+
+class TopKRouter(nn.Module):
+    def __init__(self, d_model, num_experts, top_k=2):
+        super().__init__()
+        self.num_experts = num_experts
+        self.top_k = top_k
+        self.linear = nn.Linear(d_model, num_experts)
+
+    def forward(self, x):
+        logits = self.linear(x)                                 # (B, L, E)
+        probs = F.softmax(logits, dim=-1)
+        topk_probs, topk_indices = torch.topk(probs, self.top_k, dim=-1)
+        topk_probs = topk_probs / (topk_probs.sum(dim=-1, keepdim=True) + 1e-9)
+        return probs, topk_probs, topk_indices
+
+
+class MoEFeedForward(nn.Module):
+    def __init__(self, d_model, d_ff, num_experts=4, top_k=2, dropout=0.1):
+        super().__init__()
+        self.num_experts = num_experts
+        self.top_k = top_k
+        self.experts = nn.ModuleList([
+            ExpertMLP(d_model, d_ff, dropout=dropout) for _ in range(num_experts)
+        ])
+        self.router = TopKRouter(d_model, num_experts, top_k)
+
+    def forward(self, x):
+        device = x.device
+        dtype = x.dtype
+        B, L, D = x.size()
+
+        full_probs, topk_probs, topk_indices = self.router(x)
+
+        N = B * L
+        x_flat = x.reshape(N, D)
+        topk_indices_flat = topk_indices.reshape(N, self.top_k)
+        topk_probs_flat = topk_probs.reshape(N, self.top_k)
+
+        topk_probs_full = torch.zeros((N, self.num_experts), device=device, dtype=dtype)
+        topk_probs_full.scatter_(1, topk_indices_flat, topk_probs_flat)
+
+        expert_outputs = []
+        for ei in range(self.num_experts):
+            selected_mask = (topk_indices_flat == ei).any(dim=-1)
+            if selected_mask.any():
+                x_sel = x_flat[selected_mask]
+                out_sel = self.experts[ei](x_sel)
+                temp = torch.zeros_like(x_flat)
+                temp[selected_mask] = out_sel
+            else:
+                temp = torch.zeros_like(x_flat)
+            expert_outputs.append(temp)
+
+        stacked = torch.stack(expert_outputs, dim=-1)             # (N, D, E)
+        weighted = stacked * topk_probs_full.unsqueeze(1)         # (N, D, E)
+        combined = weighted.sum(dim=-1)                           # (N, D)
+        out = combined.view(B, L, D)
+        return out
+
+
+# ---------------- Decoder Block: GQA attention + MoE FFN ----------------
+class DecoderBlockMoEGQA(nn.Module):
+    def __init__(self, d_model=256, num_heads=8, num_kv_heads=2, d_ff=1024,
+                 dropout=0.1, num_experts=4, top_k=2):
+        super().__init__()
+        self.mhsa = GroupQueryAttention(d_model=d_model, num_heads=num_heads,
+                                        num_kv_heads=num_kv_heads, dropout=dropout, causal=True)
+        self.addnorm1 = AddNorm(d_model, dropout=dropout)
+
+        self.moef = MoEFeedForward(d_model, d_ff, num_experts=num_experts,
+                                    top_k=top_k, dropout=dropout)
+        self.addnorm2 = AddNorm(d_model, dropout=dropout)
+
+    def forward(self, x, tgt_mask=None):
+        sa_out, self_attn = self.mhsa(x, tgt_mask)
+        x2 = self.addnorm1(x, sa_out)
+
+        moe_out = self.moef(x2)
+        x3 = self.addnorm2(x2, moe_out)
+
+        return x3, self_attn
+
+
+# ---------------- Decoder-Only Transformer: MoE + GQA ----------------
+class DecoderOnlyMoEGQAModel(pl.LightningModule):
+    def __init__(
+        self,
+        vocab_size: int,
+        tokenizer,
+        d_model: int = 256,
+        max_positions: int = 512,
+        num_layers: int = 6,
+        num_heads: int = 8,
+        num_kv_heads: int = 2,
+        d_ff: int = 1024,
+        dropout: float = 0.1,
+        pad_token_id: Optional[int] = None,
+        lr: float = 1e-4,
+        use_sinusoidal_pos: bool = True,
+        num_experts: int = 4,
+        top_k: int = 2,
+    ):
+        super().__init__()
+        self.save_hyperparameters(ignore=["tokenizer"])
+        self.tokenizer = tokenizer
+
+        self.embedding = TokenEmbeddingModule(
+            vocab_size=vocab_size,
+            d_model=d_model,
+            max_positions=max_positions,
+            dropout=dropout,
+            pad_token_id=pad_token_id,
+            use_sinusoidal_pos=use_sinusoidal_pos
+        )
+
+        self.layers = nn.ModuleList([
+            DecoderBlockMoEGQA(
+                d_model=d_model,
+                num_heads=num_heads,
+                num_kv_heads=num_kv_heads,
+                d_ff=d_ff,
+                dropout=dropout,
+                num_experts=num_experts,
+                top_k=top_k
+            )
+            for _ in range(num_layers)
+        ])
+
+        self.norm = nn.LayerNorm(d_model)
+        self.classifier = nn.Linear(d_model, vocab_size)
+        self.loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
+
+        # tracking and metrics
+        self.train_epoch_losses = []
+        self.val_epoch_losses = []
+        self.val_nll_sum = 0.0
+        self.val_n_tokens = 0
+        self.generated_texts = []
+        self.reference_texts = []
+
+    def forward(self, input_ids, tgt_mask=None):
+        x = self.embedding(input_ids, tgt_mask)
+        attn_maps = []
+        for layer in self.layers:
+            x, attn = layer(x, tgt_mask)
+            attn_maps.append(attn)
+        x = self.norm(x)
+        logits = self.classifier(x)
+        return logits, attn_maps
+
+    def training_step(self, batch, batch_idx):
+        input_ids, labels = batch["input_ids"], batch["labels"]
+        logits, _ = self(input_ids)
+        loss = self.loss_fn(logits.view(-1, logits.size(-1)), labels.view(-1))
+        self.train_epoch_losses.append(loss.detach())
+        self.log("train_loss", loss, prog_bar=True)
+        return loss
+
+    def on_train_epoch_end(self):
+        avg_loss = torch.stack(self.train_epoch_losses).mean()
+        self.log("train_loss_epoch", avg_loss, prog_bar=True)
+        print(f"\n----------------------------------------------\n \
+                Training loss epoch: {avg_loss.item():.4f}\n \
+                \n----------------------------------------------\n")
+        self.train_epoch_losses = []
+
+    def validation_step(self, batch, batch_idx):
+        input_ids, labels = batch["input_ids"], batch["labels"]
+        logits, _ = self(input_ids)
+        loss = self.loss_fn(logits.view(-1, logits.size(-1)), labels.view(-1))
+        self.val_epoch_losses.append(loss.detach())
+        self.log("val_loss", loss, prog_bar=True)
+
+        # Accumulate token-weighted NLL for proper perplexity
+        log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+        mask = (labels != -100)
+        safe_labels = labels.clone()
+        safe_labels[~mask] = 0
+        target_log_probs = log_probs.gather(dim=-1, index=safe_labels.unsqueeze(-1)).squeeze(-1)
+        target_log_probs = target_log_probs * mask.float()
+
+        self.val_nll_sum += -target_log_probs.sum().item()
+        self.val_n_tokens += mask.sum().item()
+
+        # Decode predictions & references
+        preds = torch.argmax(logits, dim=-1)
+        pred_texts = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+        ref_texts = self.tokenizer.batch_decode(
+            torch.where(labels != -100, labels, self.tokenizer.pad_token_id),
+            skip_special_tokens=True
+        )
+        self.generated_texts.extend(pred_texts)
+        self.reference_texts.extend(ref_texts)
+
+        return loss
+
+    def on_validation_epoch_end(self):
+        avg_loss = torch.stack(self.val_epoch_losses).mean()
+        avg_nll = self.val_nll_sum / max(self.val_n_tokens, 1)
+        perplexity = torch.exp(torch.tensor(avg_nll))
+        self.log("val_loss_epoch", avg_loss, prog_bar=True)
+        self.log("val_perplexity", perplexity, prog_bar=True)
+        print(f"\n----------------------------------------------\n \
+                Validation loss epoch: {avg_loss.item():.4f}\n \
+                Perplexity: {perplexity.item():.4f}\n \
+                \n----------------------------------------------\n")
+
+        if len(self.generated_texts) > 0:
+            # BLEU
+            bleu = sacrebleu.corpus_bleu(self.generated_texts, [self.reference_texts])
+            self.log("val_bleu", bleu.score, prog_bar=True)
+
+            # ROUGE
+            scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
+            rouge_scores = [scorer.score(r, g) for r, g in zip(self.reference_texts, self.generated_texts)]
+
+            avg_rouge1 = sum(s["rouge1"].fmeasure for s in rouge_scores) / len(rouge_scores)
+            avg_rouge2 = sum(s["rouge2"].fmeasure for s in rouge_scores) / len(rouge_scores)
+            avg_rougeL = sum(s["rougeL"].fmeasure for s in rouge_scores) / len(rouge_scores)
+
+            self.log("val_rouge1", avg_rouge1, prog_bar=True)
+            self.log("val_rouge2", avg_rouge2, prog_bar=True)
+            self.log("val_rougeL", avg_rougeL, prog_bar=True)
+
+            # METEOR
+            meteor_scores = [meteor_score([r.split()], g.split()) for r, g in zip(self.reference_texts, self.generated_texts)]
+            avg_meteor = sum(meteor_scores) / len(meteor_scores)
+            self.log("val_meteor", avg_meteor, prog_bar=True)
+
+            # BERTScore
+            P, R, F1 = bertscore(self.generated_texts, self.reference_texts, lang="en", verbose=False)
+            self.log("val_bertscore_p", P.mean().item(), prog_bar=True)
+            self.log("val_bertscore_r", R.mean().item(), prog_bar=True)
+            self.log("val_bertscore_f1", F1.mean().item(), prog_bar=True)
+
+            print(f"\n----------------------------------------------\n \
+            BLEU: {bleu.score:.2f}\n \
+            ROUGE-1: {avg_rouge1:.4f}\n \
+            ROUGE-2: {avg_rouge2:.4f}\n \
+            ROUGE-L: {avg_rougeL:.4f}\n \
+            METEOR: {avg_meteor:.4f}\n \
+            BERTScore-F1: {F1.mean().item():.4f}\n \
+            Perplexity: {perplexity.item():.4f}\n \
+            \n----------------------------------------------\n")
+
+        # Reset accumulators
+        self.val_epoch_losses = []
+        self.val_nll_sum = 0.0
+        self.val_n_tokens = 0
+        self.generated_texts = []
+        self.reference_texts = []
+
+    def configure_optimizers(self):
+        return torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)

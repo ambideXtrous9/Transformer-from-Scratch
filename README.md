@@ -25,9 +25,10 @@
 🧪 **Independent Testing** - Run each module separately for debugging and learning
 📚 **Educational** - Clean, well-documented code perfect for learning
 🎨 **Modern Stack** - Uses GPT-2 tokenizer and state-of-the-art practices
-🚀 **Multiple Architectures** - CrossAttention, DecoderOnly, MoE, GQA, MQA, and MLA
+🚀 **Multiple Architectures** - CrossAttention, DecoderOnly, MoE, GQA, MQA, MLA, MoE+GQA, MoE+MLA
 📊 **Comprehensive Metrics** - BLEU, ROUGE, METEOR, BERTScore, and Perplexity evaluation
 🎛️ **Advanced Features** - Mixture of Experts, Group Query Attention, Multi-Query Attention, Multi-Head Latent Attention, SwiGLU FFN
+🏋️ **RL Training** - SFT + GRPO (Group Relative Policy Optimization) for math reasoning (DeepSeek-R1 style)
 
 ---
 
@@ -56,6 +57,8 @@
 | **🔀 DecoderOnlyGQA** | `models/DecoderOnlyGQAModel.py` | GQA | Grouped KV heads (LLaMA 2, Mistral) |
 | **⚡ DecoderOnlyMQA** | `models/DecoderOnlyMQAModel.py` | MQA | Single KV head, fastest inference |
 | **🧬 DecoderOnlyMLA** | `models/DecoderOnlyMLAModel.py` | MLA | Compressed KV cache (DeepSeek-V2) |
+| **🎛️🔀 MoE + GQA** | `models/DecoderMoEGQA.py` | GQA | MoE FFN + grouped KV heads |
+| **🎛️🧬 MoE + MLA** | `models/DecoderMoEMLA.py` | MLA | MoE FFN + compressed latent KV |
 
 ### Attention Mechanism Comparison
 
@@ -108,7 +111,10 @@ python PLTrainerScripts/DecoderMoETrainer.py        # Mixture of Experts
 python PLTrainerScripts/DecoderOnlyGQATrainer.py    # Group Query Attention
 python PLTrainerScripts/DecoderOnlyMQATrainer.py    # Multi-Query Attention
 python PLTrainerScripts/DecoderOnlyMLATrainer.py    # Multi-Head Latent Attention
+python PLTrainerScripts/DecoderMoEGQATrainer.py     # MoE + GQA
+python PLTrainerScripts/DecoderMoEMLATrainer.py     # MoE + MLA
 python PLTrainerScripts/GSM8KTrainer.py             # GSM8K Math Reasoning
+python PLTrainerScripts/GQA_SFT_GRPO_Trainer.py     # SFT + GRPO (RL) with GQA
 ```
 
 - Uses PyTorch Lightning `Trainer` with `ModelCheckpoint` callback
@@ -123,7 +129,10 @@ python HFTrainerScripts/MoETrainer.py               # Mixture of Experts
 python HFTrainerScripts/GQATrainer.py               # Group Query Attention
 python HFTrainerScripts/MQATrainer.py               # Multi-Query Attention
 python HFTrainerScripts/MLATrainer.py               # Multi-Head Latent Attention
+python HFTrainerScripts/MoEGQATrainer.py            # MoE + GQA
+python HFTrainerScripts/MoEMLATrainer.py            # MoE + MLA
 python HFTrainerScripts/GSM8KTrainer.py             # GSM8K Math Reasoning
+python HFTrainerScripts/GQA_SFT_GRPO_Trainer.py     # SFT + GRPO (RL) with GQA
 ```
 
 - Uses HuggingFace `Trainer` with `SaveBestModelCallback`
@@ -140,6 +149,8 @@ python PLTrainerScripts/DecoderMoEInference.py       # MoE
 python PLTrainerScripts/DecoderOnlyGQAInference.py   # GQA
 python PLTrainerScripts/DecoderOnlyMQAInference.py   # MQA
 python PLTrainerScripts/DecoderOnlyMLAInference.py   # MLA
+python PLTrainerScripts/DecoderMoEGQAInference.py    # MoE + GQA
+python PLTrainerScripts/DecoderMoEMLAInference.py    # MoE + MLA
 python PLTrainerScripts/GSM8KInference.py            # GSM8K
 ```
 
@@ -150,6 +161,8 @@ python HFTrainerScripts/MoEInference.py              # MoE
 python HFTrainerScripts/GQAInference.py              # GQA
 python HFTrainerScripts/MQAInference.py              # MQA
 python HFTrainerScripts/MLAInference.py              # MLA
+python HFTrainerScripts/MoEGQAInference.py           # MoE + GQA
+python HFTrainerScripts/MoEMLAInference.py           # MoE + MLA
 python HFTrainerScripts/GSM8KInference.py            # GSM8K
 ```
 
@@ -296,7 +309,9 @@ transformer-from-scratch/
 │   ├── DecoderMoE.py                        #   Decoder-only with Mixture of Experts
 │   ├── DecoderOnlyGQAModel.py               #   Decoder-only with GQA
 │   ├── DecoderOnlyMQAModel.py               #   Decoder-only with MQA
-│   └── DecoderOnlyMLAModel.py               #   Decoder-only with MLA
+│   ├── DecoderOnlyMLAModel.py               #   Decoder-only with MLA
+│   ├── DecoderMoEGQA.py                    #   MoE + GQA hybrid
+│   └── DecoderMoEMLA.py                    #   MoE + MLA hybrid
 │
 ├── PLTrainerScripts/                        # ⚡ PyTorch Lightning Training & Inference
 │   ├── Trainer.py                           #   CrossAttention Seq2Seq training
@@ -311,6 +326,11 @@ transformer-from-scratch/
 │   ├── DecoderOnlyMQAInference.py           #   MQA inference
 │   ├── DecoderOnlyMLATrainer.py             #   MLA training
 │   ├── DecoderOnlyMLAInference.py           #   MLA inference
+│   ├── DecoderMoEGQATrainer.py             #   MoE + GQA training
+│   ├── DecoderMoEGQAInference.py           #   MoE + GQA inference
+│   ├── DecoderMoEMLATrainer.py             #   MoE + MLA training
+│   ├── DecoderMoEMLAInference.py           #   MoE + MLA inference
+│   ├── GQA_SFT_GRPO_Trainer.py            #   SFT + GRPO (RL) training
 │   ├── GSM8KTrainer.py                      #   GSM8K math reasoning training
 │   └── GSM8KInference.py                    #   GSM8K math reasoning inference
 │
@@ -326,6 +346,11 @@ transformer-from-scratch/
 │   ├── MLAInference.py                      #   Multi-Head Latent Attention inference
 │   ├── MoETrainer.py                        #   Mixture of Experts training
 │   ├── MoEInference.py                      #   Mixture of Experts inference
+│   ├── MoEGQATrainer.py                    #   MoE + GQA training
+│   ├── MoEGQAInference.py                  #   MoE + GQA inference
+│   ├── MoEMLATrainer.py                    #   MoE + MLA training
+│   ├── MoEMLAInference.py                  #   MoE + MLA inference
+│   ├── GQA_SFT_GRPO_Trainer.py            #   SFT + GRPO (RL) training
 │   ├── GSM8KTrainer.py                      #   GSM8K math reasoning training
 │   └── GSM8KInference.py                    #   GSM8K math reasoning inference
 │
@@ -345,9 +370,15 @@ transformer-from-scratch/
 │   ├── HF_GQACheckpoints/                   #   HF: GQA model
 │   ├── HF_MLACheckpoints/                   #   HF: MLA model
 │   ├── HF_MoECheckpoints/                   #   HF: MoE model
+│   ├── DecoderMoEGQACheckpoints/            #   PL: MoE + GQA model
+│   ├── DecoderMoEMLACheckpoints/            #   PL: MoE + MLA model
+│   ├── HF_MoEGQACheckpoints/               #   HF: MoE + GQA model
+│   ├── HF_MoEMLACheckpoints/               #   HF: MoE + MLA model
+│   ├── GQA_SFT_GRPO_Checkpoints/           #   PL: SFT + GRPO model
+│   ├── HF_GQA_SFT_GRPO_Checkpoints/        #   HF: SFT + GRPO model
 │   └── HF_GSM8KCheckpoints/                 #   HF: GSM8K model
 │
-├── docs/                                    # 📚 Documentation (38 files)
+├── docs/                                    # 📚 Documentation (50+ files)
 │   ├── Embedding.md, AddNorm.md, FFN.md     #   Core component docs
 │   ├── MultiHeadSelfAttention.md            #   Attention mechanism docs
 │   ├── GroupQueryAttention.md               #   GQA docs

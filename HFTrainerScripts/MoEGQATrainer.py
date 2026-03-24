@@ -1,9 +1,5 @@
 """
-HF Trainer — GSM8K Math Reasoning
-
-Full training of the custom DecoderOnlyModel on GSM8K with HF Trainer.
-
-Original: TrainerScripts/GSM8KTrainer.py
+HF Trainer — Decoder-Only with MoE + GQA on GSM8K
 """
 
 import sys, os
@@ -16,7 +12,7 @@ from transformers import Trainer, TrainingArguments
 from datasets import load_dataset
 
 from core.Embedding import get_tokenizer
-from models.DecoderOnlySeq2SeqModel import DecoderOnlyModel
+from models.DecoderMoEGQA import DecoderOnlyMoEGQAModel
 from HFTrainerScripts.hf_wrapper import HFModelWrapper, SaveBestModelCallback, make_compute_metrics, make_compute_perplexity, preprocess_logits_for_metrics
 
 import config
@@ -24,15 +20,10 @@ import config
 torch.manual_seed(config.SEED)
 
 MAX_LENGTH = config.MAX_LENGTH
-OUTPUT_DIR = config.CHECKPOINTS["hf_gsm8k"]
+OUTPUT_DIR = config.CHECKPOINTS["hf_moe_gqa"]
 
 
 class GSM8KDataset(Dataset):
-    """
-    Format per sample:
-        Input:  [BOS] Question: {question}\nAnswer: {answer}
-        Labels: Question: {question}\nAnswer: {answer} [EOS]
-    """
     def __init__(self, tokenizer, hf_dataset, max_length=256):
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -85,14 +76,11 @@ class GSM8KDataset(Dataset):
 if __name__ == "__main__":
     print("Loading GSM8K dataset from HuggingFace...")
     gsm8k = load_dataset(config.DATASET_NAME, config.DATASET_CONFIG)
-
     train_data = gsm8k["train"]
     test_data = gsm8k["test"]
 
     print(f"\nTrain samples: {len(train_data)}")
     print(f"Test samples:  {len(test_data)}")
-    print(f"\nSample question:\n{train_data[0]['question']}")
-    print(f"\nSample answer:\n{train_data[0]['answer']}")
 
     tokenizer = get_tokenizer(config.TOKENIZER_NAME, add_pad_token_if_missing=True)
     vocab_size = len(tokenizer)
@@ -101,14 +89,16 @@ if __name__ == "__main__":
     train_dataset = GSM8KDataset(tokenizer, train_data, max_length=MAX_LENGTH)
     val_dataset = GSM8KDataset(tokenizer, test_data, max_length=MAX_LENGTH)
 
-    base_model = DecoderOnlyModel(
+    base_model = DecoderOnlyMoEGQAModel(
         vocab_size=vocab_size, d_model=config.D_MODEL, max_positions=MAX_LENGTH,
-        num_layers=config.NUM_LAYERS, num_heads=config.NUM_HEADS, d_ff=config.D_FF, tokenizer=tokenizer,
+        num_layers=config.NUM_LAYERS, num_heads=config.NUM_HEADS, num_kv_heads=config.NUM_KV_HEADS,
+        d_ff=config.D_FF, tokenizer=tokenizer,
         dropout=config.DROPOUT, pad_token_id=pad_id, lr=config.LEARNING_RATE,
+        num_experts=config.NUM_EXPERTS, top_k=config.TOP_K,
     )
     model = HFModelWrapper(base_model)
 
-    print(f"\nTotal parameters: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     best_callback = SaveBestModelCallback(save_dir=os.path.join(OUTPUT_DIR, "best"))
 
@@ -138,7 +128,7 @@ if __name__ == "__main__":
     )
 
     print("\n" + "=" * 50)
-    print("Starting Training — GSM8K")
+    print("Starting Training — DecoderOnly (MoE + GQA)")
     print("=" * 50 + "\n")
 
     trainer.train()

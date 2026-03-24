@@ -41,9 +41,19 @@ LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 0.01
 MAX_EPOCHS = 100
 TRAIN_BATCH_SIZE = 4
-VAL_BATCH_SIZE = 2
+VAL_BATCH_SIZE = 4
 NUM_WORKERS = 2
 LOGGING_STEPS = 50            # HF Trainer: log every N steps
+EVAL_STEPS = 5              # HF Trainer: evaluate every N steps
+
+# ==================== GRPO (Group Relative Policy Optimization) ====================
+GRPO_GROUP_SIZE = 4           # G: number of completions sampled per question
+GRPO_EPOCHS = 10              # number of RL training epochs
+GRPO_LR = 1e-5               # learning rate for GRPO (smaller than SFT)
+GRPO_BETA = 0.04              # KL penalty coefficient against reference policy
+GRPO_CLIP_EPS = 0.2           # PPO-style clipping epsilon
+GRPO_MAX_NEW_TOKENS = 128     # max tokens generated per completion during GRPO rollouts
+SFT_EPOCHS = 5                # how many SFT epochs before switching to GRPO
 
 # ==================== Inference (HF generate_greedy) ====================
 MAX_NEW_TOKENS = 256
@@ -61,6 +71,9 @@ CHECKPOINTS = {
     "seq2seq":       os.path.join(_ROOT, "checkpoints", "Seq2SeqCheckpoints"),
     "decoder_only":  os.path.join(_ROOT, "checkpoints", "DecoderOnlyCheckpoints"),
     "moe":           os.path.join(_ROOT, "checkpoints", "DecoderMoECheckpoints"),
+    "moe_gqa":       os.path.join(_ROOT, "checkpoints", "DecoderMoEGQACheckpoints"),
+    "moe_mla":       os.path.join(_ROOT, "checkpoints", "DecoderMoEMLACheckpoints"),
+    "gqa_sft_grpo":  os.path.join(_ROOT, "checkpoints", "GQA_SFT_GRPO_Checkpoints"),
     "gqa":           os.path.join(_ROOT, "checkpoints", "GQACheckpoints"),
     "mqa":           os.path.join(_ROOT, "checkpoints", "MQACheckpoints"),
     "mla":           os.path.join(_ROOT, "checkpoints", "MLACheckpoints"),
@@ -68,6 +81,9 @@ CHECKPOINTS = {
     # HF
     "hf_decoder_only": os.path.join(_ROOT, "checkpoints", "HF_DecoderOnlyCheckpoints"),
     "hf_moe":          os.path.join(_ROOT, "checkpoints", "HF_MoECheckpoints"),
+    "hf_moe_gqa":      os.path.join(_ROOT, "checkpoints", "HF_MoEGQACheckpoints"),
+    "hf_moe_mla":      os.path.join(_ROOT, "checkpoints", "HF_MoEMLACheckpoints"),
+    "hf_gqa_sft_grpo": os.path.join(_ROOT, "checkpoints", "HF_GQA_SFT_GRPO_Checkpoints"),
     "hf_gqa":          os.path.join(_ROOT, "checkpoints", "HF_GQACheckpoints"),
     "hf_mqa":          os.path.join(_ROOT, "checkpoints", "HF_MQACheckpoints"),
     "hf_mla":          os.path.join(_ROOT, "checkpoints", "HF_MLACheckpoints"),

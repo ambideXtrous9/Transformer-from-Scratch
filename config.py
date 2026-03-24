@@ -55,6 +55,20 @@ GRPO_CLIP_EPS = 0.2           # PPO-style clipping epsilon
 GRPO_MAX_NEW_TOKENS = 128     # max tokens generated per completion during GRPO rollouts
 SFT_EPOCHS = 5                # how many SFT epochs before switching to GRPO
 
+# ==================== GPU-based Batch Size ====================
+def get_batch_size_for_gpu(gpu_mem_gb: float) -> int:
+    """Return a training batch size based on available GPU memory."""
+    if gpu_mem_gb >= 40:       # A100-40GB, A6000
+        return 64
+    elif gpu_mem_gb >= 24:     # RTX 3090, RTX 4090
+        return 32
+    elif gpu_mem_gb >= 15:     # T4 (Colab free), RTX 4070
+        return 16
+    elif gpu_mem_gb >= 8:      # RTX 3060, RTX 4060
+        return 8
+    else:
+        return 4
+
 # ==================== Inference (HF generate_greedy) ====================
 MAX_NEW_TOKENS = 256
 TEMPERATURE = 0.8

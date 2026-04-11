@@ -14,9 +14,6 @@ from dotenv import load_dotenv
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 
-pl.seed_everything(config.SEED)
-load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
-
 MAX_LENGTH = config.MAX_LENGTH
 
 class GSM8KDataset(Dataset):
@@ -81,74 +78,77 @@ class GSM8KDataset(Dataset):
         }
 
 
-# ---------------- Setup ----------------
-print("Loading GSM8K dataset from HuggingFace...")
-gsm8k = load_dataset(config.DATASET_NAME, config.DATASET_CONFIG)
-train_data = gsm8k["train"]
-test_data = gsm8k["test"]
+if __name__ == '__main__':
+    pl.seed_everything(config.SEED)
+    
+    # ---------------- Setup ----------------
+    print("Loading GSM8K dataset from HuggingFace...")
+    gsm8k = load_dataset(config.DATASET_NAME, config.DATASET_CONFIG)
+    train_data = gsm8k["train"]
+    test_data = gsm8k["test"]
 
-print(f"\nTrain samples: {len(train_data)}")
-print(f"Test samples:  {len(test_data)}")
+    print(f"\nTrain samples: {len(train_data)}")
+    print(f"Test samples:  {len(test_data)}")
 
-tokenizer = get_tokenizer(config.TOKENIZER_NAME, add_pad_token_if_missing=True)
-vocab_size = len(tokenizer)
-pad_id = tokenizer.pad_token_id
+    tokenizer = get_tokenizer(config.TOKENIZER_NAME, add_pad_token_if_missing=True)
+    vocab_size = len(tokenizer)
+    pad_id = tokenizer.pad_token_id
 
-train_dataset = GSM8KDataset(tokenizer, train_data, max_length=MAX_LENGTH)
-val_dataset = GSM8KDataset(tokenizer, test_data, max_length=MAX_LENGTH)
+    train_dataset = GSM8KDataset(tokenizer, train_data, max_length=MAX_LENGTH)
+    val_dataset = GSM8KDataset(tokenizer, test_data, max_length=MAX_LENGTH)
 
-train_loader = DataLoader(train_dataset, batch_size=config.TRAIN_BATCH_SIZE, shuffle=True, num_workers=config.NUM_WORKERS)
-val_loader = DataLoader(val_dataset, batch_size=config.VAL_BATCH_SIZE, num_workers=config.NUM_WORKERS)
+    train_loader = DataLoader(train_dataset, batch_size=config.TRAIN_BATCH_SIZE, shuffle=True, num_workers=config.NUM_WORKERS)
+    val_loader = DataLoader(val_dataset, batch_size=config.VAL_BATCH_SIZE, num_workers=config.NUM_WORKERS)
 
-# ---------------- Lightning Model ----------------
-model = DecoderOnlyMLAModel(
-    vocab_size=vocab_size,
-    d_model=config.D_MODEL,
-    max_positions=MAX_LENGTH,
-    num_layers=config.NUM_LAYERS,
-    num_heads=config.NUM_HEADS,
-    d_compress=config.D_COMPRESS,
-    d_ff=config.D_FF,
-    tokenizer=tokenizer,
-    dropout=config.DROPOUT,
-    pad_token_id=pad_id,
-    lr=config.LEARNING_RATE
-)
+    # ---------------- Lightning Model ----------------
+    model = DecoderOnlyMLAModel(
+        vocab_size=vocab_size,
+        d_model=config.D_MODEL,
+        max_positions=MAX_LENGTH,
+        num_layers=config.NUM_LAYERS,
+        num_heads=config.NUM_HEADS,
+        d_compress=config.D_COMPRESS,
+        d_ff=config.D_FF,
+        tokenizer=tokenizer,
+        dropout=config.DROPOUT,
+        pad_token_id=pad_id,
+        lr=config.LEARNING_RATE
+    )
 
-checkpoint_callback = ModelCheckpoint(
-    dirpath = config.CHECKPOINTS["mla"],
-    filename = 'DecoderOnlyMLABestModel',
-    save_top_k = 1,
-    verbose = True,
-    monitor = 'val_loss_epoch',
-    mode = 'min'
-)
+    checkpoint_callback = ModelCheckpoint(
+        dirpath = config.CHECKPOINTS["mla"],
+        filename = 'DecoderOnlyMLABestModel',
+        save_top_k = 1,
+        verbose = True,
+        monitor = 'val_loss_epoch',
+        mode = 'min'
+    )
 
-# ---------------- Trainer ----------------
-wandb_logger = WandbLogger(project=config.WANDB_PROJECT, name="DecoderOnly-MLA", log_model=False)
-wandb_logger.experiment.config.update({
-    "architecture": "DecoderOnly-MLA",
-    "d_model": config.D_MODEL,
-    "num_layers": config.NUM_LAYERS,
-    "num_heads": config.NUM_HEADS,
-    "d_compress": config.D_COMPRESS,
-    "d_ff": config.D_FF,
-    "dropout": config.DROPOUT,
-    "learning_rate": config.LEARNING_RATE,
-    "max_length": MAX_LENGTH,
-    "batch_size": config.TRAIN_BATCH_SIZE,
-    "max_epochs": config.MAX_EPOCHS,
-})
+    # ---------------- Trainer ----------------
+    wandb_logger = WandbLogger(project=config.WANDB_PROJECT, name="DecoderOnly-MLA", log_model=False)
+    wandb_logger.experiment.config.update({
+        "architecture": "DecoderOnly-MLA",
+        "d_model": config.D_MODEL,
+        "num_layers": config.NUM_LAYERS,
+        "num_heads": config.NUM_HEADS,
+        "d_compress": config.D_COMPRESS,
+        "d_ff": config.D_FF,
+        "dropout": config.DROPOUT,
+        "learning_rate": config.LEARNING_RATE,
+        "max_length": MAX_LENGTH,
+        "batch_size": config.TRAIN_BATCH_SIZE,
+        "max_epochs": config.MAX_EPOCHS,
+    })
 
-trainer = pl.Trainer(
-    max_epochs=config.MAX_EPOCHS,
-    check_val_every_n_epoch=1,
-    devices=-1,
-    accelerator="gpu",
-    callbacks=[checkpoint_callback],
-    logger=wandb_logger
-)
+    trainer = pl.Trainer(
+        max_epochs=config.MAX_EPOCHS,
+        check_val_every_n_epoch=1,
+        devices=-1,
+        accelerator="gpu",
+        callbacks=[checkpoint_callback],
+        logger=wandb_logger
+    )
 
-# ---------------- Run Training ----------------
-trainer.fit(model, train_loader, val_loader)
-wandb.finish()
+    # ---------------- Run Training ----------------
+    trainer.fit(model, train_loader, val_loader)
+    wandb.finish()

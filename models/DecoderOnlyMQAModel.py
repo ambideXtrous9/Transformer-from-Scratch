@@ -16,10 +16,8 @@ import sacrebleu
 from rouge_score import rouge_scorer
 from nltk.translate.meteor_score import meteor_score
 import nltk
-nltk.download('wordnet')
+nltk.download('wordnet', quiet=True)
 from bert_score import score as bertscore
-
-pl.seed_everything(42)
 
 # ---------------- Decoder Block (GPT-style with MQA) ----------------
 class DecoderBlock(nn.Module):

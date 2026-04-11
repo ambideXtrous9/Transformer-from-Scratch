@@ -16,10 +16,8 @@ import sacrebleu
 from rouge_score import rouge_scorer
 from nltk.translate.meteor_score import meteor_score
 import nltk
-nltk.download('wordnet')
+nltk.download('wordnet', quiet=True)
 from bert_score import score as bertscore
-
-pl.seed_everything(42)
 
 # ---------------- Decoder Block (GPT-style) ----------------
 class DecoderBlock(nn.Module):
@@ -35,7 +33,7 @@ class DecoderBlock(nn.Module):
 
     def forward(self, x: torch.Tensor, tgt_mask: Optional[torch.Tensor] = None):
         # 1. Masked Self-Attention + AddNorm
-        mhsa_out, self_attn = self.mhsa(x, tgt_mask)
+        mhsa_out, self_attn = self.mhsa(x, tgt_mask, return_attn=True)
         x = self.addnorm1(x, mhsa_out)
 
         # 2. Feed Forward + AddNorm

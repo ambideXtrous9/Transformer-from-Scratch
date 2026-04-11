@@ -29,7 +29,6 @@ import pytorch_lightning as pl
 from dotenv import load_dotenv
 import wandb
 
-pl.seed_everything(config.SEED)
 load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
 
 MAX_LENGTH = config.MAX_LENGTH
@@ -255,6 +254,7 @@ def get_per_token_logprobs(model, full_ids, prompt_len, device):
 # ==================== Main ====================
 
 if __name__ == "__main__":
+    pl.seed_everything(config.SEED)
     print("Loading GSM8K dataset from HuggingFace...")
     gsm8k = load_dataset(config.DATASET_NAME, config.DATASET_CONFIG)
     train_data = gsm8k["train"]

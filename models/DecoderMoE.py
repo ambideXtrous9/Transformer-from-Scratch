@@ -16,10 +16,8 @@ import sacrebleu
 from rouge_score import rouge_scorer
 from nltk.translate.meteor_score import meteor_score
 import nltk
-nltk.download('wordnet')
+nltk.download('wordnet', quiet=True)
 from bert_score import score as bertscore
-
-pl.seed_everything(42)
 
 # Expert MLP same as yours
 class ExpertMLP(nn.Module):
@@ -131,7 +129,7 @@ class DecoderBlockMoE(nn.Module):
         self.addnorm2 = AddNorm(d_model, dropout=dropout)
     
     def forward(self, x, tgt_mask=None):
-        sa_out, self_attn = self.mhsa(x, tgt_mask)
+        sa_out, self_attn = self.mhsa(x, tgt_mask, return_attn=True)
         x2 = self.addnorm1(x, sa_out)
         
         # MoE instead of single FFN

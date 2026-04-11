@@ -36,11 +36,11 @@ class DecoderBlock(LightningModule):
         memory_mask: Optional[torch.Tensor] = None,
     ):
         # 1. Masked Self-Attention + AddNorm
-        mhsa_out, self_attn = self.mhsa(x, tgt_mask)
+        mhsa_out, self_attn = self.mhsa(x, tgt_mask, return_attn=True)
         x = self.addnorm1(x, mhsa_out)
 
         # 2. Cross-Attention + AddNorm (encoder output as kv)
-        cross_out, cross_attn = self.cross_attn(x, memory_mask, kv=enc_out)
+        cross_out, cross_attn = self.cross_attn(x, memory_mask, kv=enc_out, return_attn=True)
         x = self.addnorm2(x, cross_out)
 
         # 3. Feed Forward + AddNorm

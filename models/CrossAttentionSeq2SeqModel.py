@@ -14,10 +14,8 @@ import sacrebleu
 from rouge_score import rouge_scorer
 from nltk.translate.meteor_score import meteor_score
 import nltk
-nltk.download('wordnet')
+nltk.download('wordnet', quiet=True)
 from bert_score import score as bertscore
-
-pl.seed_everything(42)
 
 class CrossAttentionSeq2SeqModel(pl.LightningModule):
     def __init__(

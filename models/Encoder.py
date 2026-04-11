@@ -24,7 +24,7 @@ class EncoderBlock(LightningModule):
 
     def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None):
         # MHSA + Add&Norm
-        mhsa_out, attn_weights = self.mhsa(x, mask)
+        mhsa_out, attn_weights = self.mhsa(x, mask, return_attn=True)
         x = self.addnorm1(x, mhsa_out)
 
         # FFN + Add&Norm

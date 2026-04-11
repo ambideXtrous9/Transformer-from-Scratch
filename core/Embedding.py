@@ -1,4 +1,9 @@
 # file: tokenize_and_embedding.py
+
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 import math
 from typing import List, Dict, Optional
 
@@ -6,6 +11,8 @@ import torch
 import torch.nn as nn
 from pytorch_lightning import LightningModule
 from transformers import AutoTokenizer
+
+from core.PositionalEmbedding import PositionalEmbedding
 
 # ---------- Tokenizer helper ----------
 def get_tokenizer(name: str = "gpt2", add_pad_token_if_missing: bool = True):
@@ -24,15 +31,6 @@ def tokenize_batch(tokenizer, texts: List[str], max_length: int = 512) -> Dict[s
         return_attention_mask=True,
     )
 
-# ---------- Sinusoidal positional encoding ----------
-def sinusoidal_positional_encoding(n_pos: int, d_model: int) -> torch.Tensor:
-    pe = torch.zeros(n_pos, d_model)
-    position = torch.arange(0, n_pos, dtype=torch.float).unsqueeze(1)  # (n_pos, 1)
-    div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model))
-    pe[:, 0::2] = torch.sin(position * div_term)
-    pe[:, 1::2] = torch.cos(position * div_term)
-    return pe  # (n_pos, d_model)
-
 # ---------- Token Embedding ----------
 class TokenEmbedding(nn.Module):
     def __init__(self, vocab_size: int, d_model: int, pad_token_id: Optional[int] = None):
@@ -42,28 +40,6 @@ class TokenEmbedding(nn.Module):
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embedding(input_ids) * self.scale  # (B, L, d_model)
-
-# ---------- Positional Embedding ----------
-class PositionalEmbedding(nn.Module):
-    def __init__(self, d_model: int, max_positions: int, use_sinusoidal: bool = False):
-        super().__init__()
-        self.use_sinusoidal = use_sinusoidal
-
-        if use_sinusoidal:
-            pe = sinusoidal_positional_encoding(max_positions, d_model)  # (max_positions, d_model)
-            self.register_buffer("positional_encoding", pe, persistent=False)
-            self.positional_embedding = None
-        else:
-            self.positional_embedding = nn.Embedding(max_positions, d_model)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B, L, D = x.size()
-        if self.use_sinusoidal:
-            pos_enc = self.positional_encoding[:L, :]  # (L, d_model)
-            return pos_enc.unsqueeze(0).to(x.device)   # (1, L, d_model) → broadcast
-        else:
-            pos_ids = torch.arange(L, device=x.device).unsqueeze(0).expand(B, L)
-            return self.positional_embedding(pos_ids)  # (B, L, d_model)
 
 # ---------- Combined Embedding Module ----------
 class TokenEmbeddingModule(LightningModule):

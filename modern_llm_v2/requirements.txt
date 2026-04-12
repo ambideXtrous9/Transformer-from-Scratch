@@ -1,0 +1,24 @@
+# Core dependencies
+torch>=2.1.0
+pytorch-lightning>=2.1.0
+transformers>=4.36.0
+datasets>=2.15.0
+
+# Flash Attention (optional but recommended for faster training)
+# Install separately: pip install flash-attn --no-build-isolation
+# flash-attn>=2.3.0
+
+# Experiment tracking
+wandb>=0.16.0
+
+# Utilities
+numpy>=1.24.0
+pandas>=2.0.0
+python-dotenv>=1.0.0
+safetensors>=0.4.0
+
+# Evaluation metrics (optional)
+sacrebleu>=2.3.0
+rouge_score>=0.1.2
+bert_score>=0.3.13
+nltk>=3.8

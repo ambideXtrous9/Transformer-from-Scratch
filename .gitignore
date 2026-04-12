@@ -214,3 +214,5 @@ transformer/
 wandb/
 checkpoints/
 GSM8K/
+.port/
+.qwen/
